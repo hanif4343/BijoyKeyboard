@@ -1,112 +1,266 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5"
-    tools:context=".MainActivity">
+    android:background="#0F172A">
 
     <LinearLayout
-        android:id="@+id/setup_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="center"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp"
-        android:visibility="visible">
+        android:padding="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="কিবোর্ড সেটআপ করুন"
-            android:textColor="#000000"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btn_enable_keyboard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="কিবোর্ডটি সচল (Enable) করুন" />
-
-        <Button
-            android:id="@+id/btn_default_keyboard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="ডিফল্ট কিবোর্ড হিসেবে সেট করুন" />
-    </LinearLayout>
-
-    <ScrollView
-        android:id="@+id/main_features_layout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone">
-
+        <!-- ── HEADER ── -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:gravity="center"
+            android:paddingTop="32dp"
+            android:paddingBottom="28dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⌨"
+                android:textSize="52sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="হানিফ বিজয় কিবোর্ড"
+                android:textColor="#F1F5F9"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Unicode বাংলা কিবোর্ড"
+                android:textColor="#64748B"
+                android:textSize="13sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
+        <!-- ── STEP 1 CARD ── -->
+        <LinearLayout
+            android:id="@+id/card_step1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <ImageView
+                    android:id="@+id/icon_step1"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@android:drawable/radiobutton_off_background" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="ধাপ ১ — কিবোর্ড Enable করুন"
+                    android:textColor="#F1F5F9"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginStart="10dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="১/২"
+                    android:textColor="#475569"
+                    android:textSize="11sp" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="#4CAF50"
-                android:padding="15dp"
-                android:text="অভিনন্দন! কিবোর্ডটি সফলভাবে সেটআপ হয়েছে।"
+                android:text="Settings → Language &amp; Input → On-screen Keyboard এ গিয়ে &quot;H-Bijoy Keyboard&quot; চালু করুন।"
+                android:textColor="#94A3B8"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginBottom="14dp" />
+
+            <Button
+                android:id="@+id/btn_enable_keyboard"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Enable করুন  ➜"
                 android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:backgroundTint="#1D4ED8"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
+
+        <!-- ── STEP 2 CARD ── -->
+        <LinearLayout
+            android:id="@+id/card_step2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="12dp"
+            android:alpha="0.35">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <ImageView
+                    android:id="@+id/icon_step2"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@android:drawable/radiobutton_off_background" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="ধাপ ২ — Default কিবোর্ড সেট করুন"
+                    android:textColor="#F1F5F9"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginStart="10dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="২/২"
+                    android:textColor="#475569"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="নিচের বাটনে ক্লিক করলে keyboard picker আসবে। সেখান থেকে &quot;H-Bijoy Keyboard&quot; সিলেক্ট করুন।"
+                android:textColor="#94A3B8"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginBottom="14dp" />
+
+            <Button
+                android:id="@+id/btn_set_default"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Default করুন  ➜"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:backgroundTint="#0F766E"
+                android:stateListAnimator="@null"
+                android:enabled="false" />
+        </LinearLayout>
+
+        <!-- ── DONE CARD ── -->
+        <LinearLayout
+            android:id="@+id/card_done"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg_green"
+            android:padding="20dp"
+            android:gravity="center"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎉"
+                android:textSize="36sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="সেটআপ সম্পন্ন!"
+                android:textColor="#F0FDF4"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:gravity="center"/>
+                android:layout_marginTop="8dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:text="কিবোর্ড সেটিংস ও ফিচার"
-                android:textColor="#333333"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btn_theme"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="কিবোর্ড থিম পরিবর্তন" />
-
-            <Button
-                android:id="@+id/btn_size"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="5dp"
-                android:text="কিবোর্ড সাইজ এডজাস্ট" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="30dp"
-                android:background="#CCCCCC" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="ডেভেলপার তথ্য:"
-                android:textStyle="italic" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="নাম: হানিফ সরদার\nমোবাইল: 01788196143"
-                android:textColor="#555555" />
-
+                android:text="H-Bijoy Keyboard এখন ব্যবহারের জন্য প্রস্তুত।"
+                android:textColor="#BBF7D0"
+                android:textSize="13sp"
+                android:layout_marginTop="4dp"
+                android:gravity="center" />
         </LinearLayout>
-    </ScrollView>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <!-- ── INFO CARD ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📋  কিবোর্ড শর্টকাট"
+                android:textColor="#CBD5E1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⌨  বাংলা/ইংরেজি   →   Lang বাটন\n্ (হসন্ত)   →   g\nরেফ র্   →   Shift + A\nর-ফলা ্র   →   z\nয-ফলা ্য   →   Shift + Z\nহসন্ত দৃশ্যমান   →   g → Space"
+                android:textColor="#64748B"
+                android:textSize="12sp"
+                android:lineSpacingExtra="5dp"
+                android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <!-- ── DEVELOPER CARD ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="16dp"
+            android:layout_marginBottom="32dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="👨‍💻  Developer"
+                android:textColor="#CBD5E1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="হানিফ সরদার\n01788196143"
+                android:textColor="#475569"
+                android:textSize="12sp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
