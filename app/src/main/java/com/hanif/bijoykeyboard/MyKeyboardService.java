@@ -224,6 +224,8 @@ public class MyKeyboardService extends InputMethodService {
             resetStates();
         });
 
+        // ঃ বিসর্গ — Shift+0 দিয়ে number row handler এই handle করে
+
         Button btnDel = keyboardView.findViewById(R.id.btn_del);
         if (btnDel != null) {
             btnDel.setOnTouchListener((v, event) -> {
@@ -388,26 +390,65 @@ public class MyKeyboardService extends InputMethodService {
 
     private void processBengaliLogic(String result, InputConnection ic) {
         if (result == null || result.isEmpty()) return;
-        if (result.equals("\u09BE") || result.equals("\u09CC")) {
+
+        // ─── ো: pending এ-কার + আ-কার
+        if (result.equals("\u09BE")) {
+            if (pendingVowel.equals("\u09C7")) {
+                pendingVowel = "";
+                ic.commitText("\u09CB", 1);
+                isG_Pressed = false; return;
+            }
             String prev = getPreviousChar(ic);
             if (prev.equals("\u09C7")) {
                 ic.deleteSurroundingText(1, 0);
-                ic.commitText(result.equals("\u09BE") ? "\u09CB" : "\u09CC", 1);
+                ic.commitText("\u09CB", 1);
                 isG_Pressed = false; return;
             }
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText(result, 1);
+            isG_Pressed = false; return;
         }
+
+        // ─── ৌ: pending এ-কার + ৌ-কার অথবা সরাসরি
+        if (result.equals("\u09CC")) {
+            if (pendingVowel.equals("\u09C7")) {
+                pendingVowel = "";
+                ic.commitText("\u09CC", 1);
+                isG_Pressed = false; return;
+            }
+            String prev = getPreviousChar(ic);
+            if (prev.equals("\u09C7")) {
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText("\u09CC", 1);
+                isG_Pressed = false; return;
+            }
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText("\u09CC", 1);
+            isG_Pressed = false; return;
+        }
+
+        // ─── হসন্ত pending থাকলে কার → স্বরবর্ণ
         if (isG_Pressed && isBengaliKar(result)) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             ic.commitText(convertKarToVowel(result), 1);
             isG_Pressed = false; return;
         }
+
+        // ─── র‍্য (ZWJ)
         if (result.equals("\u09CD\u09AF")) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             String prev = getPreviousChar(ic);
             if (prev.equals("\u09B0")) {
                 ic.commitText("\u200D" + result, 1);
-                isG_Pressed = false; return;
+            } else {
+                ic.commitText(result, 1);
             }
+            isG_Pressed = false; return;
         }
+
+        // ─── রেফ
         if (result.equals("\u09B0\u09CD")) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             String prev = getPreviousChar(ic);
             if (!prev.isEmpty()) {
                 ic.deleteSurroundingText(1, 0);
@@ -415,14 +456,27 @@ public class MyKeyboardService extends InputMethodService {
                     String mainChar = getPreviousChar(ic);
                     ic.deleteSurroundingText(1, 0);
                     ic.commitText(result + mainChar + prev, 1);
-                } else { ic.commitText(result + prev, 1); }
-            } else { ic.commitText(result, 1); }
+                } else {
+                    ic.commitText(result + prev, 1);
+                }
+            } else {
+                ic.commitText(result, 1);
+            }
             isG_Pressed = false; return;
         }
-        if (result.equals("\u09CD")) { isG_Pressed = true; return; }
+
+        // ─── হসন্ত
+        if (result.equals("\u09CD")) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            isG_Pressed = true; return;
+        }
+
         boolean isKar = isBengaliKar(result);
         boolean isAutoJoint = result.startsWith("\u09CD");
+
+        // ─── যুক্তবর্ণ
         if (isG_Pressed || isAutoJoint) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             String lastChar = getPreviousChar(ic);
             if (!lastChar.isEmpty()) {
                 ic.deleteSurroundingText(1, 0);
@@ -440,13 +494,21 @@ public class MyKeyboardService extends InputMethodService {
             } else { ic.commitText(result, 1); }
             isG_Pressed = false; return;
         }
-        if (isKar && (result.equals("\u09BF") || result.equals("\u09C7") || result.equals("\u09C8"))) {
+
+        // ─── শুধু ি এবং এ-কার pending হবে (আগে বসে)
+        if (result.equals("\u09BF") || result.equals("\u09C7")) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
             pendingVowel = result; return;
         }
+
+        // ─── বাকি সব কার ও বর্ণ সরাসরি
         if (!isKar) {
             ic.commitText(result, 1);
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
-        } else { ic.commitText(result, 1); }
+        } else {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText(result, 1);
+        }
         isG_Pressed = false;
     }
 
@@ -473,14 +535,22 @@ public class MyKeyboardService extends InputMethodService {
             if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
             else { char c = (char) event.getUnicodeChar(); tag = String.valueOf(c).toLowerCase(); }
             if (event.isShiftPressed() && tag.equals("7")) { processBengaliLogic(Bijoymaper.getUnicode("7", true), ic); return true; }
-            if (event.isShiftPressed() && tag.equals("9")) return super.onKeyDown(keyCode, event);
+            if (event.isShiftPressed() && tag.equals("9")) { processBengaliLogic(Bijoymaper.getUnicode("9", true), ic); return true; }
+            if (event.isShiftPressed() && tag.equals("0")) { processBengaliLogic(Bijoymaper.getUnicode("0", true), ic); return true; }
             String res = Bijoymaper.getUnicode(tag, event.isShiftPressed());
             if (res != null && !res.isEmpty() && !res.equals(tag)) { processBengaliLogic(res, ic); return true; }
         }
         return super.onKeyDown(keyCode, event);
     }
 
-    private void resetStates() { pendingVowel = ""; isG_Pressed = false; }
+    private void resetStates() {
+        if (!pendingVowel.isEmpty()) {
+            InputConnection ic = getCurrentInputConnection();
+            if (ic != null) ic.commitText(pendingVowel, 1);
+            pendingVowel = "";
+        }
+        isG_Pressed = false;
+    }
     private boolean isBengaliKar(String s) { return "\u09BE\u09BF\u09C0\u09C1\u09C2\u09C3\u09C7\u09C8\u09CB\u09CC\u09D7".contains(s); }
     private String convertKarToVowel(String kar) {
         switch (kar) {
