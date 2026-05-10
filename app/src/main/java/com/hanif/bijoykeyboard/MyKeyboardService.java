@@ -393,6 +393,24 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── ো: pending এ-কার + আ-কার
         if (result.equals("\u09BE")) {
+            // হসন্ত + আ-কার = আ স্বরবর্ণ
+            if (isG_Pressed) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                ic.commitText("\u0986", 1);
+                isG_Pressed = false; return;
+            }
+            // pending অ + আ-কার = আ
+            if (pendingVowel.equals("\u0985")) {
+                pendingVowel = "";
+                ic.commitText("\u0986", 1);
+                isG_Pressed = false; return;
+            }
+            String prev = getPreviousChar(ic);
+            if (prev.equals("\u0985")) {
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText("\u0986", 1);
+                isG_Pressed = false; return;
+            }
             if (pendingVowel.equals("\u09C7")) {
                 pendingVowel = "";
                 ic.commitText("\u09CB", 1);
@@ -411,6 +429,24 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── ৌ: pending এ-কার + ৌ-কার অথবা সরাসরি
         if (result.equals("\u09CC")) {
+            // হসন্ত + ৌ-কার = ঔ স্বরবর্ণ
+            if (isG_Pressed) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                ic.commitText("\u0994", 1);
+                isG_Pressed = false; return;
+            }
+            // pending ও + ৌ-কার = ঔ
+            if (pendingVowel.equals("\u0993")) {
+                pendingVowel = "";
+                ic.commitText("\u0994", 1);
+                isG_Pressed = false; return;
+            }
+            String prev2 = getPreviousChar(ic);
+            if (prev2.equals("\u0993")) {
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText("\u0994", 1);
+                isG_Pressed = false; return;
+            }
             if (pendingVowel.equals("\u09C7")) {
                 pendingVowel = "";
                 ic.commitText("\u09CC", 1);
@@ -497,15 +533,40 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── শুধু ি এবং এ-কার pending হবে (আগে বসে)
         if (result.equals("\u09BF") || result.equals("\u09C7")) {
+            // pending অ + ি = ই, অ + এ-কার = এ
+            if (pendingVowel.equals("\u0985")) {
+                pendingVowel = "";
+                ic.commitText(convertKarToVowel(result), 1);
+                isG_Pressed = false; return;
+            }
+            // ic-তে অ থাকলে
+            String prev = getPreviousChar(ic);
+            if (prev.equals("\u0985")) {
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText(convertKarToVowel(result), 1);
+                isG_Pressed = false; return;
+            }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
             pendingVowel = result; return;
         }
 
         // ─── বাকি সব কার ও বর্ণ সরাসরি
         if (!isKar) {
+            // অ হলে pending রাখো — পরের কার দেখে স্বরবর্ণ বানাবো
+            if (result.equals("\u0985")) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                pendingVowel = "\u0985"; // অ pending
+                isG_Pressed = false; return;
+            }
             ic.commitText(result, 1);
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
         } else {
+            // কার আসলে — pending অ থাকলে স্বরবর্ণে রূপান্তর
+            if (pendingVowel.equals("\u0985")) {
+                pendingVowel = "";
+                ic.commitText(convertKarToVowel(result), 1);
+                isG_Pressed = false; return;
+            }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             ic.commitText(result, 1);
         }
