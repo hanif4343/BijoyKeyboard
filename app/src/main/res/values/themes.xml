@@ -1,0 +1,27 @@
+<resources>
+    <style name="MyKeyStyle">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">55dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">22sp</item> <item name="android:textColor">#FFFFFF</item>
+        <item name="android:background">@drawable/key_background</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="SpecialKeyStyle" parent="MyKeyStyle">
+        <item name="android:backgroundTint">#374151</item>
+        <item name="android:textSize">16sp</item> </style>
+
+    <style name="DeleteKeyStyle" parent="MyKeyStyle">
+        <item name="android:backgroundTint">#374151</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">22sp</item>
+    </style>
+
+    <style name="EnterKeyStyle" parent="MyKeyStyle">
+        <item name="android:backgroundTint">#4B5563</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">22sp</item>
+    </style>
+</resources>
