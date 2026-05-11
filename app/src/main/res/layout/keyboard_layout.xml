@@ -23,7 +23,8 @@
             android:layout_marginEnd="8dp"/>
 
         <HorizontalScrollView
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="match_parent"
             android:scrollbars="none">
 
@@ -33,20 +34,19 @@
                 android:layout_height="match_parent"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:padding="2dp">
-
-                <Button
-                    android:id="@+id/btn_clip_item"
-                    android:layout_width="wrap_content"
-                    android:layout_height="28dp"
-                    android:text="No clip"
-                    android:textSize="10sp"
-                    android:textColor="#FFFFFF"
-                    android:background="#374151"
-                    android:textAllCaps="false"
-                    android:visibility="gone" />
-            </LinearLayout>
+                android:padding="2dp"/>
         </HorizontalScrollView>
+
+        <!-- Mic icon — top bar এ -->
+        <TextView
+            android:id="@+id/btn_mic_top"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="🎤"
+            android:textSize="18sp"
+            android:gravity="center"
+            android:background="@android:color/transparent"/>
+
     </LinearLayout>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
@@ -114,8 +114,7 @@
         <Button android:id="@+id/btn_symbol" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.2" android:text="123" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_lang" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.2" android:text="বাং" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_comma" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="," android:textSize="22sp" android:layout_margin="1dp"/>
-        <Button android:id="@+id/btn_space" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="3.2" android:text="Space" android:textSize="14sp" android:layout_margin="1dp"/>
-        <Button android:id="@+id/btn_voice" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="🎤" android:textSize="18sp" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_space" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="4" android:text="Space" android:textSize="14sp" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_period" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="." android:textSize="22sp" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_enter" style="@style/EnterKeyStyle" android:layout_width="0dp" android:layout_weight="1.6" android:text="&#x23CE;" android:layout_margin="1dp"/>
     </LinearLayout>
