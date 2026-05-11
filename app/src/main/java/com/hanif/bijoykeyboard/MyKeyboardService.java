@@ -10,10 +10,20 @@ import android.widget.LinearLayout;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import android.speech.RecognitionListener;
+import android.os.Bundle;
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import android.os.Handler;
 import android.view.MotionEvent;
 import java.util.ArrayList;
+import java.util.List;
 
 public class MyKeyboardService extends InputMethodService {
 
@@ -27,6 +37,9 @@ public class MyKeyboardService extends InputMethodService {
     private boolean isCtrlPressed = false;
     private Button btnCtrl;
     private View keyboardView;
+    private SpeechRecognizer speechRecognizer = null;
+    private boolean isListening = false;
+    private Vibrator vibrator;
 
     private Handler repeatUpdateHandler = new Handler();
     private boolean mAutoIncrement = false;
@@ -65,6 +78,7 @@ public class MyKeyboardService extends InputMethodService {
     @Override
     public View onCreateInputView() {
         keyboardView = getLayoutInflater().inflate(R.layout.keyboard_layout, null);
+        vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         setupKeyboard();
         updateKeyLabels();
         return keyboardView;
@@ -205,6 +219,7 @@ public class MyKeyboardService extends InputMethodService {
         });
 
         keyboardView.findViewById(R.id.btn_space).setOnClickListener(v -> {
+            doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
             if (isG_Pressed && !isEnglishMode) {
@@ -220,11 +235,18 @@ public class MyKeyboardService extends InputMethodService {
         });
 
         keyboardView.findViewById(R.id.btn_enter).setOnClickListener(v -> {
+            doHaptic();
             getCurrentInputConnection().sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
             resetStates();
         });
 
         // ঃ বিসর্গ — Shift+0 দিয়ে number row handler এই handle করে
+
+        // 🎤 Voice বাটন
+        Button btnVoice = keyboardView.findViewById(R.id.btn_voice);
+        if (btnVoice != null) {
+            btnVoice.setOnClickListener(v -> startVoiceInput());
+        }
 
         Button btnDel = keyboardView.findViewById(R.id.btn_del);
         if (btnDel != null) {
@@ -355,7 +377,17 @@ public class MyKeyboardService extends InputMethodService {
         }
     }
 
+    private void doHaptic() {
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE));
+        } else {
+            vibrator.vibrate(18);
+        }
+    }
+
     private void handleOnScreenKey(String tag) {
+        doHaptic();
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
         if (isEmojiMode) { ic.commitText(getEmoji(tag), 1); return; }
@@ -537,6 +569,109 @@ public class MyKeyboardService extends InputMethodService {
             if (res != null && !res.isEmpty() && !res.equals(tag)) { processBengaliLogic(res, ic); return true; }
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    private void startVoiceInput() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "Voice recognition সাপোর্ট নেই", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // আগের recognizer বন্ধ করো
+        if (speechRecognizer != null) {
+            speechRecognizer.destroy();
+            speechRecognizer = null;
+        }
+
+        // ভাষা নির্বাচন — বাংলা মোডে বাংলা, ইংরেজি মোডে ইংরেজি
+        String language = isEnglishMode ? "en-US" : "bn-BD";
+
+        Button btnVoice = keyboardView != null ? keyboardView.findViewById(R.id.btn_voice) : null;
+        if (btnVoice != null) btnVoice.setText("🔴");
+        isListening = true;
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        speechRecognizer.setRecognitionListener(new RecognitionListener() {
+            @Override public void onReadyForSpeech(Bundle p) {
+                Toast.makeText(MyKeyboardService.this,
+                    isEnglishMode ? "Listening... (English)" : "শুনছি... (বাংলা)",
+                    Toast.LENGTH_SHORT).show();
+            }
+            @Override public void onResults(Bundle results) {
+                List<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (matches != null && !matches.isEmpty()) {
+                    String text = matches.get(0);
+                    // বাংলা ভয়েস — দাঁড়ি/কমা replace
+                    if (!isEnglishMode) {
+                        text = text
+                            .replace("দাঁড়ি", "।")
+                            .replace("কমা", ",")
+                            .replace("প্রশ্নবোধক", "?")
+                            .replace("বিস্ময়বোধক", "!")
+                            .replace("সেমিকোলন", ";")
+                            .replace("কোলন", ":")
+                            .replace("নতুন লাইন", "\n")
+                            .replace("ড্যাশ", "-")
+                            .replace("উদ্ধৃতি", "\"")
+                            .replace("ব্র্যাকেট খোলো", "(")
+                            .replace("ব্র্যাকেট বন্ধ", ")")
+                            .replace("স্পেস", " ");
+                    } else {
+                        // English ভয়েস punctuation
+                        text = text
+                            .replace(" comma", ",")
+                            .replace(" period", ".")
+                            .replace(" full stop", ".")
+                            .replace(" question mark", "?")
+                            .replace(" exclamation mark", "!")
+                            .replace(" new line", "\n")
+                            .replace(" semicolon", ";")
+                            .replace(" colon", ":")
+                            .replace(" dash", "-");
+                    }
+                    InputConnection ic = getCurrentInputConnection();
+                    if (ic != null) ic.commitText(text, 1);
+                }
+                stopVoice(btnVoice);
+            }
+            @Override public void onError(int error) {
+                String msg;
+                switch (error) {
+                    case SpeechRecognizer.ERROR_NO_MATCH: msg = "কোনো কথা বোঝা যায়নি"; break;
+                    case SpeechRecognizer.ERROR_NETWORK: msg = "নেটওয়ার্ক সমস্যা"; break;
+                    case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: msg = "Microphone permission নেই"; break;
+                    default: msg = "ত্রুটি হয়েছে, আবার চেষ্টা করুন"; break;
+                }
+                Toast.makeText(MyKeyboardService.this, msg, Toast.LENGTH_SHORT).show();
+                stopVoice(btnVoice);
+            }
+            @Override public void onBeginningOfSpeech() {}
+            @Override public void onRmsChanged(float v) {}
+            @Override public void onBufferReceived(byte[] b) {}
+            @Override public void onEndOfSpeech() {}
+            @Override public void onPartialResults(Bundle b) {}
+            @Override public void onEvent(int t, Bundle b) {}
+        });
+
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        speechRecognizer.startListening(intent);
+    }
+
+    private void stopVoice(Button btnVoice) {
+        isListening = false;
+        if (btnVoice != null) btnVoice.setText("🎤");
+        if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
+    }
+
+    @Override
+    public void onDestroy() {
+        if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
+        super.onDestroy();
     }
 
     private void resetStates() {
