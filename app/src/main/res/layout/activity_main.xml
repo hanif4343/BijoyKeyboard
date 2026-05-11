@@ -242,7 +242,7 @@
             android:orientation="vertical"
             android:background="@drawable/card_bg"
             android:padding="16dp"
-            android:layout_marginBottom="32dp">
+            android:layout_marginBottom="12dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -261,6 +261,19 @@
                 android:textSize="12sp"
                 android:lineSpacingExtra="4dp" />
         </LinearLayout>
+
+        <!-- ── FEATURE GUIDE BUTTON ── -->
+        <Button
+            android:id="@+id/btn_guide"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="📖  সব ফিচার দেখুন"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="#1D4ED8"
+            android:stateListAnimator="@null"
+            android:layout_marginBottom="32dp"/>
 
     </LinearLayout>
 </ScrollView>
