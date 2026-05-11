@@ -630,8 +630,7 @@ public class MyKeyboardService extends InputMethodService {
 
     private Handler waveHandler = new Handler();
     private Runnable waveRunnable;
-    private int waveStep = 0;
-    private final String[] WAVE_FRAMES = {"〜🎙〜", "≈🎙≈", "～🎙～", "≋🎙≋"};
+    private boolean blinkState = false;
 
     private void startWaveAnimation() {
         TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
@@ -639,9 +638,10 @@ public class MyKeyboardService extends InputMethodService {
         waveRunnable = new Runnable() {
             @Override public void run() {
                 if (!isListening) return;
-                mic.setText(WAVE_FRAMES[waveStep % WAVE_FRAMES.length]);
-                waveStep++;
-                waveHandler.postDelayed(this, 200);
+                // লাল dot blink — on/off
+                mic.setText(blinkState ? "🔴" : "⚫");
+                blinkState = !blinkState;
+                waveHandler.postDelayed(this, 500);
             }
         };
         waveHandler.post(waveRunnable);
@@ -649,9 +649,9 @@ public class MyKeyboardService extends InputMethodService {
 
     private void stopWaveAnimation() {
         waveHandler.removeCallbacks(waveRunnable);
+        blinkState = false;
         TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
         if (mic != null) mic.setText("🎤");
-        waveStep = 0;
     }
 
     private void startVoiceInput() {
