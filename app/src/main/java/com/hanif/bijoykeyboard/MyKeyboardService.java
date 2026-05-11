@@ -6,6 +6,7 @@ import android.view.View;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.content.ClipboardManager;
@@ -301,7 +302,7 @@ public class MyKeyboardService extends InputMethodService {
         // ঃ বিসর্গ — Shift+0 দিয়ে number row handler এই handle করে
 
         // 🎤 Top bar Mic বাটন
-        TextView btnMicTop = keyboardView.findViewById(R.id.btn_mic_top);
+        ImageView btnMicTop = keyboardView.findViewById(R.id.btn_mic_top);
         if (btnMicTop != null) {
             btnMicTop.setOnClickListener(v -> startVoiceInput());
         }
@@ -488,7 +489,6 @@ public class MyKeyboardService extends InputMethodService {
                 if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
                 ic.commitText("\u0986", 1); isG_Pressed = false; return;
             }
-            if (pendingVowel.equals("\u0985")) { pendingVowel = ""; ic.commitText("\u0986", 1); isG_Pressed = false; return; }
             prevChar = getPreviousChar(ic);
             if (prevChar.equals("\u0985")) { ic.deleteSurroundingText(1, 0); ic.commitText("\u0986", 1); isG_Pressed = false; return; }
             if (pendingVowel.equals("\u09C7")) { pendingVowel = ""; ic.commitText("\u09CB", 1); isG_Pressed = false; return; }
@@ -573,7 +573,6 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── ি এবং এ-কার → pending (আগে বসে)
         if (result.equals("\u09BF") || result.equals("\u09C7")) {
-            if (pendingVowel.equals("\u0985")) { pendingVowel = ""; ic.commitText(convertKarToVowel(result), 1); isG_Pressed = false; return; }
             prevChar = getPreviousChar(ic);
             if (prevChar.equals("\u0985")) { ic.deleteSurroundingText(1, 0); ic.commitText(convertKarToVowel(result), 1); isG_Pressed = false; return; }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
@@ -582,16 +581,17 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── বাকি সব
         if (!isKar) {
-            if (result.equals("\u0985")) {
-                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
-                pendingVowel = "\u0985"; isG_Pressed = false; return;
-            }
-            ic.commitText(result, 1);
+            // অ সরাসরি commit করো — pending করার দরকার নেই
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText(result, 1);
         } else {
-            if (pendingVowel.equals("\u0985")) { pendingVowel = ""; ic.commitText(convertKarToVowel(result), 1); isG_Pressed = false; return; }
+            // কার আসলে — আগে ic-তে অ আছে কিনা দেখো
             prevChar = getPreviousChar(ic);
-            if (prevChar.equals("\u0985")) { ic.deleteSurroundingText(1, 0); ic.commitText(convertKarToVowel(result), 1); isG_Pressed = false; return; }
+            if (prevChar.equals("\u0985")) {
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText(convertKarToVowel(result), 1);
+                isG_Pressed = false; return;
+            }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             ic.commitText(result, 1);
         }
@@ -634,13 +634,15 @@ public class MyKeyboardService extends InputMethodService {
     private boolean blinkState = false;
 
     private void startWaveAnimation() {
-        TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
+        ImageView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
         if (mic == null) return;
         waveRunnable = new Runnable() {
             @Override public void run() {
                 if (!isListening) return;
-                // লাল dot blink — on/off
-                mic.setText(blinkState ? "🔴" : "⚫");
+                // লাল blink — on/off color tint
+                mic.setColorFilter(blinkState
+                    ? android.graphics.Color.RED
+                    : android.graphics.Color.parseColor("#94A3B8"));
                 blinkState = !blinkState;
                 waveHandler.postDelayed(this, 500);
             }
@@ -651,8 +653,8 @@ public class MyKeyboardService extends InputMethodService {
     private void stopWaveAnimation() {
         waveHandler.removeCallbacks(waveRunnable);
         blinkState = false;
-        TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
-        if (mic != null) mic.setText("🎤");
+        ImageView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
+        if (mic != null) mic.setColorFilter(android.graphics.Color.parseColor("#94A3B8"));
     }
 
     private void startVoiceInput() {
