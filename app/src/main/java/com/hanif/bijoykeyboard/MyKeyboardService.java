@@ -239,14 +239,12 @@ public class MyKeyboardService extends InputMethodService {
             btnCommaEmoji.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (isSymbolMode) {
-                    // সিম্বল মোডে থাকলে ইমোজি মোড অন হবে
-                    isEmojiMode = !isEmojiMode;
-                    updateKeyLabels();
-                } else if (isEmojiMode) {
-                    // ইমোজি মোডে থাকলে কমা কাজ করবে
-                    if (ic != null) ic.commitText(",", 1);
+                    // Symbol mode এ → Emoji panel খোলো
+                    isEmojiMode = true;
+                    isSymbolMode = false;
+                    showEmojiPanel();
                 } else {
-                    // সাধারণ মোডে কমা কাজ করবে
+                    // সাধারণ মোডে কমা
                     if (ic != null) ic.commitText(",", 1);
                 }
             });
@@ -274,6 +272,7 @@ public class MyKeyboardService extends InputMethodService {
         keyboardView.findViewById(R.id.btn_symbol).setOnClickListener(v -> {
             isSymbolMode = !isSymbolMode;
             isEmojiMode = false;
+            if (isSymbolMode) setInputView(keyboardView);
             updateKeyLabels();
         });
 
@@ -390,22 +389,130 @@ public class MyKeyboardService extends InputMethodService {
         }
     }
 
-    private String getEmoji(String tag) {
-        // এখানে আমি রিদ্মিকের মতো অনেক ইমোজি সেট করে দিলাম
-        switch (tag) {
-            case "q": return "😊"; case "w": return "😂"; case "e": return "❤️"; case "r": return "😍";
-            case "t": return "😘"; case "y": return "😭"; case "u": return "🔥"; case "i": return "👍";
-            case "o": return "🙌"; case "p": return "✨";
-            case "a": return "🙏"; case "s": return "😎"; case "d": return "🤣"; case "f": return "😮";
-            case "g": return "😢"; case "h": return "😡"; case "j": return "🤔"; case "k": return "💯";
-            case "l": return "💪";
-            case "z": return "🎉"; case "x": return "🌹"; case "c": return "🤝"; case "v": return "👏";
-            case "b": return "💖"; case "n": return "💙"; case "m": return "✅";
-            case "1": return "😇"; case "2": return "🤩"; case "3": return "😅"; case "4": return "🙄";
-            case "5": return "🤤"; case "6": return "🤐"; case "7": return "🤫"; case "8": return "🤑";
-            case "9": return "😷"; case "0": return "😴";
-            default: return "😀";
+    // ══════════════════════════════════════
+    // EMOJI PANEL
+    // ══════════════════════════════════════
+
+    private static final String[][] EMOJI_CATEGORIES = {
+        {"😊", // category icon
+         "😀","😁","😂","🤣","😃","😄","😅","😆","😇","😈","😉","😊","😋","😌","😍","😎",
+         "😏","😐","😑","😒","😓","😔","😕","😖","😗","😘","😙","😚","😛","😜","😝","😞",
+         "😟","😠","😡","😢","😣","😤","😥","😦","😧","😨","😩","😪","😫","😬","😭","😮",
+         "😯","😰","😱","😲","😳","😴","😵","😶","😷","🙁","🙂","🙃","🙄","🤐","🤑","🤒",
+         "🤓","🤔","🤕","🤗","🤠","🤡","🤢","🤣","🤤","🤥","🤧","🤨","🤩","🤪","🤫","🤬",
+         "🤭","🤯","🥰","🥱","🥲","🥳","🥴","🥵","🥶","🥺","🫠","🫡","🫢","🫣","🫤","🫥"},
+        {"❤️",
+         "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖",
+         "💘","💝","💟","☮️","✝️","☯️","🕉️","✡️","🔯","🛐","⛎","♈","♉","♊","♋","♌",
+         "♍","♎","♏","♐","♑","♒","♓","🆔","⚛️","🉑","☢️","☣️","📴","📳","🈶","🈚"},
+        {"👋",
+         "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆",
+         "🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🙏","✍️","💅",
+         "🤳","💪","🦾","🦿","🦵","🦶","👂","🦻","👃","👣","👁","👀","🫀","🫁","🧠","🦷"},
+        {"🐶",
+         "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈",
+         "🙉","🙊","🐒","🐔","🐧","🐦","🐤","🦆","🦅","🦉","🦇","🐺","🐗","🐴","🦄","🐝",
+         "🐛","🦋","🐌","🐞","🐜","🦟","🦗","🦂","🐢","🐍","🦎","🦖","🦕","🐙","🦑","🦐"},
+        {"🍎",
+         "🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥥","🥝",
+         "🍅","🍆","🥑","🥦","🥬","🥒","🌶","🫑","🌽","🥕","🧄","🧅","🥔","🍠","🥐","🥯",
+         "🍞","🥖","🥨","🧀","🥚","🍳","🧈","🥞","🧇","🥓","🥩","🍗","🍖","🌭","🍔","🍟"},
+        {"⚽",
+         "⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🥏","🎱","🪀","🏓","🏸","🏒","🥊","🥋",
+         "🎽","🛹","🛼","🛷","⛸","🥌","🎿","⛷","🏂","🪂","🏋️","🤼","🤸","🤺","⛹","🤾",
+         "🏌️","🏇","🧘","🏄","🏊","🤽","🚣","🧗","🚴","🏆","🥇","🥈","🥉","🏅","🎖","🎗"},
+        {"🚗",
+         "🚗","🚕","🚙","🚌","🚎","🏎","🚓","🚑","🚒","🚐","🛻","🚚","🚛","🚜","🏍","🛵",
+         "🛺","🚲","🛴","🛹","🛼","🚏","🛣","🛤","⛽","🚧","⚓","🛟","⛵","🚤","🛥","🛳",
+         "🚀","🛸","🚁","🛶","✈️","🛩","🪂","💺","🚂","🚃","🚄","🚅","🚆","🚇","🚈","🚉"},
+        {"💻",
+         "💻","🖥","🖨","⌨️","🖱","🖲","💽","💾","💿","📀","📱","📲","☎️","📞","📟","📠",
+         "📺","📻","🧭","⏱","⏲","⏰","🕰","⌚","⏳","⌛","📡","🔋","🪫","🔌","💡","🔦",
+         "🕯","🪔","🧲","💰","💴","💵","💶","💷","💸","💳","🪙","💹","✉️","📧","📨","📩"},
+        {"🌸",
+         "🌸","💐","🌹","🥀","🌺","🌻","🌼","🌷","🌱","🪴","🌲","🌳","🌴","🌵","🎋","🎍",
+         "🍀","🍁","🍂","🍃","🍄","🌾","💧","🌊","🌬","🌀","🌈","🌂","☂","☔","⛱","⚡",
+         "❄️","🔥","💥","🌙","⭐","🌟","💫","✨","☀️","🌤","⛅","🌥","☁️","🌦","🌧","⛈"},
+        {"🎉",
+         "🎉","🎊","🎈","🎁","🎀","🎗","🎟","🎫","🏷","🔖","🏮","🎆","🎇","🧨","✨","🎍",
+         "🎋","🎄","🎃","🎑","🎐","🎏","🎠","🎡","🎢","💈","🎪","🎭","🖼","🎨","🎬","🎤",
+         "🎧","🎼","🎵","🎶","🎷","🎸","🎹","🎺","🎻","🪕","🥁","🪘","🎮","🕹","🎲","♟"},
+    };
+
+    private static final String[] CATEGORY_NAMES = {
+        "😊 হাসি","❤️ মন","👋 হাত","🐶 প্রাণী","🍎 খাবার",
+        "⚽ খেলা","🚗 যান","💻 টেক","🌸 প্রকৃতি","🎉 উৎসব"
+    };
+
+    private int currentEmojiCategory = 0;
+    private View emojiPanelView = null;
+
+    private void showEmojiPanel() {
+        if (emojiPanelView == null) {
+            emojiPanelView = getLayoutInflater().inflate(R.layout.emoji_panel, null);
         }
+        setInputView(emojiPanelView);
+
+        LinearLayout tabs = emojiPanelView.findViewById(R.id.emoji_category_tabs);
+        tabs.removeAllViews();
+        for (int i = 0; i < CATEGORY_NAMES.length; i++) {
+            final int idx = i;
+            Button tab = new Button(this);
+            tab.setText(EMOJI_CATEGORIES[i][0]);
+            tab.setTextSize(18);
+            tab.setPadding(16, 4, 16, 4);
+            tab.setAllCaps(false);
+            tab.setBackgroundColor(i == currentEmojiCategory ?
+                android.graphics.Color.parseColor("#1D4ED8") :
+                android.graphics.Color.TRANSPARENT);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT);
+            p.setMargins(2, 2, 2, 2);
+            tab.setLayoutParams(p);
+            tab.setOnClickListener(v -> {
+                currentEmojiCategory = idx;
+                showEmojiPanel();
+            });
+            tabs.addView(tab);
+        }
+
+        loadEmojiGrid(emojiPanelView);
+
+        Button backBtn = emojiPanelView.findViewById(R.id.btn_emoji_back);
+        backBtn.setOnClickListener(v -> {
+            isEmojiMode = false;
+            setInputView(keyboardView);
+        });
+    }
+
+    private void loadEmojiGrid(View panel) {
+        LinearLayout grid = panel.findViewById(R.id.emoji_grid);
+        grid.removeAllViews();
+        String[] emojis = EMOJI_CATEGORIES[currentEmojiCategory];
+        for (int i = 1; i < emojis.length; i++) {
+            final String emoji = emojis[i];
+            Button btn = new Button(this);
+            btn.setText(emoji);
+            btn.setTextSize(22);
+            btn.setPadding(4, 4, 4, 4);
+            btn.setAllCaps(false);
+            btn.setBackground(null);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(52, 52);
+            p.setMargins(2, 2, 2, 2);
+            btn.setLayoutParams(p);
+            btn.setOnClickListener(v -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.commitText(emoji, 1);
+                doHaptic();
+            });
+            grid.addView(btn);
+        }
+    }
+
+    private String getEmoji(String tag) {
+        // legacy — আর ব্যবহার হয় না
+        return "😀";
     }
 
     private String getSymbol(String tag, boolean shift) {
@@ -603,22 +710,47 @@ public class MyKeyboardService extends InputMethodService {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return super.onKeyDown(keyCode, event);
         if (event.isCtrlPressed()) return super.onKeyDown(keyCode, event);
-        if (keyCode == KeyEvent.KEYCODE_DEL) { resetStates(); return super.onKeyDown(keyCode, event); }
+
+        // DEL — pending flush করে তারপর delete
+        if (keyCode == KeyEvent.KEYCODE_DEL) {
+            resetStates(); return super.onKeyDown(keyCode, event);
+        }
+
+        // Space — হসন্ত visible রাখা
         if (keyCode == KeyEvent.KEYCODE_SPACE && isG_Pressed && !isEnglishMode) {
             ic.commitText("\u09CD", 1);
             ic.commitText(" ", 1);
             ic.deleteSurroundingText(1, 0);
-            isG_Pressed = false;
-            return true;
+            isG_Pressed = false; return true;
         }
+
+        // Alt+Space — ভাষা পরিবর্তন
         if (event.isAltPressed() && keyCode == KeyEvent.KEYCODE_SPACE) {
             isEnglishMode = !isEnglishMode; isEmojiMode = false;
             resetStates(); updateKeyLabels(); return true;
         }
+
+        // Space/Enter/Arrow — pending vowel flush করো
+        if (keyCode == KeyEvent.KEYCODE_SPACE ||
+            keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+            keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+            keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (!pendingVowel.isEmpty()) {
+                ic.commitText(pendingVowel, 1);
+                pendingVowel = "";
+            }
+            isG_Pressed = false;
+            return super.onKeyDown(keyCode, event);
+        }
+
         if (isEnglishMode) return super.onKeyDown(keyCode, event);
+
         if (event.isPrintingKey() || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)) {
             String tag;
-            if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
+            if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
+                tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
             else { char c = (char) event.getUnicodeChar(); tag = String.valueOf(c).toLowerCase(); }
             if (event.isShiftPressed() && tag.equals("7")) { processBengaliLogic(Bijoymaper.getUnicode("7", true), ic); return true; }
             if (event.isShiftPressed() && tag.equals("9")) { processBengaliLogic(Bijoymaper.getUnicode("9", true), ic); return true; }
