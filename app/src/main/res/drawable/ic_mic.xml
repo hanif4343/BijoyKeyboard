@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Mic body -->
+    <path
+        android:fillColor="#94A3B8"
+        android:pathData="M12,1a4,4 0,0 1,4 4L16,12a4,4 0,0 1,-8 0L8,5a4,4 0,0 1,4 -4z"/>
+    <!-- Mic stand arc -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#94A3B8"
+        android:strokeWidth="2"
+        android:pathData="M5,11c0,3.87 3.13,7 7,7s7,-3.13 7,-7"/>
+    <!-- Mic pole -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#94A3B8"
+        android:strokeWidth="2"
+        android:pathData="M12,18L12,22"/>
+    <!-- Mic base -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#94A3B8"
+        android:strokeWidth="2"
+        android:pathData="M8,22L16,22"/>
+</vector>
