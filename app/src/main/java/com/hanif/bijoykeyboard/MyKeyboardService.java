@@ -108,25 +108,82 @@ public class MyKeyboardService extends InputMethodService {
         LinearLayout container = keyboardView.findViewById(R.id.clipboard_container);
         if (container == null) return;
         container.removeAllViews();
-        for (String text : clipboardHistory) {
+
+        // pinned items আগে দেখাও
+        ArrayList<String> pinnedItems = getPinnedItems();
+        ArrayList<String> allItems = new ArrayList<>();
+        for (String p : pinnedItems) allItems.add("📌 " + p);
+        for (String h : clipboardHistory) {
+            if (!pinnedItems.contains(h)) allItems.add(h);
+        }
+
+        for (String rawText : allItems) {
+            boolean isPinned = rawText.startsWith("📌 ");
+            String text = isPinned ? rawText.substring(3) : rawText;
+
             Button btn = new Button(this);
-            String displayText = text.length() > 10 ? text.substring(0, 10) + "..." : text;
+            String displayText = (isPinned ? "📌 " : "") +
+                (text.length() > 12 ? text.substring(0, 12) + "…" : text);
             btn.setText(displayText);
             btn.setAllCaps(false);
             btn.setTextSize(10);
-            btn.setTextColor(0xFFFFFFFF);
+            btn.setTextColor(isPinned ? 0xFF38BDF8 : 0xFFFFFFFF);
             btn.setBackgroundResource(R.drawable.key_background);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.MATCH_PARENT);
             params.setMargins(5, 5, 5, 5);
             btn.setLayoutParams(params);
+
+            // ক্লিক → paste
             btn.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null) ic.commitText(text, 1);
             });
+
+            // Long press → Pin/Unpin
+            btn.setOnLongClickListener(v -> {
+                if (isPinned) {
+                    unpinItem(text);
+                    Toast.makeText(this, "Pin সরানো হয়েছে", Toast.LENGTH_SHORT).show();
+                } else {
+                    pinItem(text);
+                    Toast.makeText(this, "📌 Pin হয়েছে!", Toast.LENGTH_SHORT).show();
+                }
+                showClipboardInUI();
+                return true;
+            });
+
             container.addView(btn);
         }
+    }
+
+    private ArrayList<String> getPinnedItems() {
+        android.content.SharedPreferences prefs = getSharedPreferences("clipboard_pins", MODE_PRIVATE);
+        String raw = prefs.getString("pins", "");
+        ArrayList<String> list = new ArrayList<>();
+        if (!raw.isEmpty()) {
+            for (String s : raw.split("\\|\\|")) if (!s.isEmpty()) list.add(s);
+        }
+        return list;
+    }
+
+    private void pinItem(String text) {
+        ArrayList<String> pins = getPinnedItems();
+        if (!pins.contains(text)) { pins.add(0, text); savePins(pins); }
+    }
+
+    private void unpinItem(String text) {
+        ArrayList<String> pins = getPinnedItems();
+        pins.remove(text);
+        savePins(pins);
+    }
+
+    private void savePins(ArrayList<String> pins) {
+        StringBuilder sb = new StringBuilder();
+        for (String s : pins) sb.append(s).append("||");
+        getSharedPreferences("clipboard_pins", MODE_PRIVATE).edit()
+            .putString("pins", sb.toString()).apply();
     }
 
     private void setupKeyboard() {
@@ -242,10 +299,10 @@ public class MyKeyboardService extends InputMethodService {
 
         // ঃ বিসর্গ — Shift+0 দিয়ে number row handler এই handle করে
 
-        // 🎤 Voice বাটন
-        Button btnVoice = keyboardView.findViewById(R.id.btn_voice);
-        if (btnVoice != null) {
-            btnVoice.setOnClickListener(v -> startVoiceInput());
+        // 🎤 Top bar Mic বাটন
+        TextView btnMicTop = keyboardView.findViewById(R.id.btn_mic_top);
+        if (btnMicTop != null) {
+            btnMicTop.setOnClickListener(v -> startVoiceInput());
         }
 
         Button btnDel = keyboardView.findViewById(R.id.btn_del);
@@ -571,37 +628,54 @@ public class MyKeyboardService extends InputMethodService {
         return super.onKeyDown(keyCode, event);
     }
 
+    private Handler waveHandler = new Handler();
+    private Runnable waveRunnable;
+    private int waveStep = 0;
+    private final String[] WAVE_FRAMES = {"〜🎙〜", "≈🎙≈", "～🎙～", "≋🎙≋"};
+
+    private void startWaveAnimation() {
+        TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
+        if (mic == null) return;
+        waveRunnable = new Runnable() {
+            @Override public void run() {
+                if (!isListening) return;
+                mic.setText(WAVE_FRAMES[waveStep % WAVE_FRAMES.length]);
+                waveStep++;
+                waveHandler.postDelayed(this, 200);
+            }
+        };
+        waveHandler.post(waveRunnable);
+    }
+
+    private void stopWaveAnimation() {
+        waveHandler.removeCallbacks(waveRunnable);
+        TextView mic = keyboardView != null ? keyboardView.findViewById(R.id.btn_mic_top) : null;
+        if (mic != null) mic.setText("🎤");
+        waveStep = 0;
+    }
+
     private void startVoiceInput() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             Toast.makeText(this, "Voice recognition সাপোর্ট নেই", Toast.LENGTH_SHORT).show();
             return;
         }
+        if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
 
-        // আগের recognizer বন্ধ করো
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-            speechRecognizer = null;
-        }
-
-        // ভাষা নির্বাচন — বাংলা মোডে বাংলা, ইংরেজি মোডে ইংরেজি
         String language = isEnglishMode ? "en-US" : "bn-BD";
-
-        Button btnVoice = keyboardView != null ? keyboardView.findViewById(R.id.btn_voice) : null;
-        if (btnVoice != null) btnVoice.setText("🔴");
         isListening = true;
+        startWaveAnimation();
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override public void onReadyForSpeech(Bundle p) {
                 Toast.makeText(MyKeyboardService.this,
-                    isEnglishMode ? "Listening... (English)" : "শুনছি... (বাংলা)",
+                    isEnglishMode ? "Listening… (English)" : "শুনছি… (বাংলা)",
                     Toast.LENGTH_SHORT).show();
             }
             @Override public void onResults(Bundle results) {
                 List<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
                     String text = matches.get(0);
-                    // বাংলা ভয়েস — দাঁড়ি/কমা replace
                     if (!isEnglishMode) {
                         text = text
                             .replace("দাঁড়ি", "।")
@@ -617,7 +691,6 @@ public class MyKeyboardService extends InputMethodService {
                             .replace("ব্র্যাকেট বন্ধ", ")")
                             .replace("স্পেস", " ");
                     } else {
-                        // English ভয়েস punctuation
                         text = text
                             .replace(" comma", ",")
                             .replace(" period", ".")
@@ -632,18 +705,22 @@ public class MyKeyboardService extends InputMethodService {
                     InputConnection ic = getCurrentInputConnection();
                     if (ic != null) ic.commitText(text, 1);
                 }
-                stopVoice(btnVoice);
+                isListening = false;
+                stopWaveAnimation();
+                if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
             }
             @Override public void onError(int error) {
                 String msg;
                 switch (error) {
                     case SpeechRecognizer.ERROR_NO_MATCH: msg = "কোনো কথা বোঝা যায়নি"; break;
-                    case SpeechRecognizer.ERROR_NETWORK: msg = "নেটওয়ার্ক সমস্যা"; break;
+                    case SpeechRecognizer.ERROR_NETWORK:  msg = "নেটওয়ার্ক সমস্যা"; break;
                     case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: msg = "Microphone permission নেই"; break;
-                    default: msg = "ত্রুটি হয়েছে, আবার চেষ্টা করুন"; break;
+                    default: msg = "ত্রুটি — আবার চেষ্টা করুন"; break;
                 }
                 Toast.makeText(MyKeyboardService.this, msg, Toast.LENGTH_SHORT).show();
-                stopVoice(btnVoice);
+                isListening = false;
+                stopWaveAnimation();
+                if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
             }
             @Override public void onBeginningOfSpeech() {}
             @Override public void onRmsChanged(float v) {}
@@ -660,12 +737,6 @@ public class MyKeyboardService extends InputMethodService {
         intent.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, language);
         intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
         speechRecognizer.startListening(intent);
-    }
-
-    private void stopVoice(Button btnVoice) {
-        isListening = false;
-        if (btnVoice != null) btnVoice.setText("🎤");
-        if (speechRecognizer != null) { speechRecognizer.destroy(); speechRecognizer = null; }
     }
 
     @Override
