@@ -7,6 +7,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
