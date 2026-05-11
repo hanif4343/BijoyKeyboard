@@ -571,8 +571,8 @@ public class MyKeyboardService extends InputMethodService {
             isG_Pressed = false; return;
         }
 
-        // ─── ি এবং এ-কার → pending (আগে বসে)
-        if (result.equals("\u09BF") || result.equals("\u09C7")) {
+        // ─── ি, এ-কার, ৈ-কার → pending (ব্যঞ্জনের আগে বসে, পরে flush)
+        if (result.equals("\u09BF") || result.equals("\u09C7") || result.equals("\u09C8")) {
             prevChar = getPreviousChar(ic);
             if (prevChar.equals("\u0985")) { ic.deleteSurroundingText(1, 0); ic.commitText(convertKarToVowel(result), 1); isG_Pressed = false; return; }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
@@ -581,11 +581,11 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── বাকি সব
         if (!isKar) {
-            // অ সরাসরি commit করো — pending করার দরকার নেই
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            // ব্যঞ্জন/স্বরবর্ণ আগে commit, তারপর pending কার (ি বা এ-কার) পরে বসবে
             ic.commitText(result, 1);
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
         } else {
-            // কার আসলে — আগে ic-তে অ আছে কিনা দেখো
+            // অন্য কার — আগে ic-তে অ আছে কিনা দেখো
             prevChar = getPreviousChar(ic);
             if (prevChar.equals("\u0985")) {
                 ic.deleteSurroundingText(1, 0);
