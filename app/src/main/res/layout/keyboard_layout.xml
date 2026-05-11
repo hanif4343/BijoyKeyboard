@@ -114,7 +114,8 @@
         <Button android:id="@+id/btn_symbol" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.2" android:text="123" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_lang" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.2" android:text="বাং" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_comma" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="," android:textSize="22sp" android:layout_margin="1dp"/>
-        <Button android:id="@+id/btn_space" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="4" android:text="Space" android:textSize="14sp" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_space" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="3.2" android:text="Space" android:textSize="14sp" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_voice" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="🎤" android:textSize="18sp" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_period" style="@style/MyKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="." android:textSize="22sp" android:layout_margin="1dp"/>
         <Button android:id="@+id/btn_enter" style="@style/EnterKeyStyle" android:layout_width="0dp" android:layout_weight="1.6" android:text="&#x23CE;" android:layout_margin="1dp"/>
     </LinearLayout>
