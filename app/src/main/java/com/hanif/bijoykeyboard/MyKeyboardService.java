@@ -590,7 +590,7 @@ public class MyKeyboardService extends InputMethodService {
                 case "q": return "["; case "w": return "]"; case "e": return "{"; case "r": return "}";
                 case "t": return "©"; case "y": return "®"; case "u": return "™"; case "i": return "§";
                 case "o": return "°"; case "p": return "•";
-                case "a": return "√"; case "s": return "π"; case "d": return "Δ"; case "f": return "£";
+                case "a": return "√"; case "s": return "π"; case "d": return "Δ"; case "f": return "'";
                 case "g": return "¥"; case "h": return "€"; case "j": return "¢"; case "k": return "←";
                 case "l": return "→";
                 case "z": return "↑"; case "x": return "↓"; case "c": return "≠"; case "v": return "≈";
@@ -757,9 +757,10 @@ public class MyKeyboardService extends InputMethodService {
 
         // ─── বাকি সব
         if (!isKar) {
-            // ব্যঞ্জন/স্বরবর্ণ আগে commit, তারপর pending কার (ি বা এ-কার) পরে বসবে
-            ic.commitText(result, 1);
+            // pending কার (ি বা এ-কার) আগে flush করো, তারপর ব্যঞ্জন বসাও
+            // (Unicode-এ ি/ে আগের ব্যঞ্জনের সাথে যায়, নতুন ব্যঞ্জনের আগে flush দরকার)
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText(result, 1);
         } else {
             // অন্য কার — আগে ic-তে অ আছে কিনা দেখো
             prevChar = getPreviousChar(ic);
@@ -822,8 +823,6 @@ public class MyKeyboardService extends InputMethodService {
                 tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
             else { char c = (char) event.getUnicodeChar(); tag = String.valueOf(c).toLowerCase(); }
             if (event.isShiftPressed() && tag.equals("7")) { processBengaliLogic(Bijoymaper.getUnicode("7", true), ic); return true; }
-            if (event.isShiftPressed() && tag.equals("9")) { processBengaliLogic(Bijoymaper.getUnicode("9", true), ic); return true; }
-            if (event.isShiftPressed() && tag.equals("0")) { processBengaliLogic(Bijoymaper.getUnicode("0", true), ic); return true; }
             String res = Bijoymaper.getUnicode(tag, event.isShiftPressed());
             if (res != null && !res.isEmpty() && !res.equals(tag)) { processBengaliLogic(res, ic); return true; }
         }
