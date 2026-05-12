@@ -5,43 +5,66 @@
     android:orientation="vertical"
     android:background="#111827">
 
-    <!-- Category tabs -->
+    <!-- TOP: Category tab bar -->
     <HorizontalScrollView
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="44dp"
         android:scrollbars="none"
-        android:background="#1A1A1A">
+        android:background="#1A1A2E">
         <LinearLayout
             android:id="@+id/emoji_category_tabs"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="4dp"/>
-    </HorizontalScrollView>
-
-    <!-- Emoji grid -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none">
-        <LinearLayout
-            android:id="@+id/emoji_grid"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="4dp"
             android:gravity="center_vertical"/>
     </HorizontalScrollView>
 
-    <!-- Back button -->
-    <Button
-        android:id="@+id/btn_emoji_back"
+    <!-- MIDDLE: Emoji grid -->
+    <ScrollView
+        android:id="@+id/emoji_scroll"
         android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:text="⌨ কিবোর্ডে ফিরুন"
-        android:textColor="#94A3B8"
-        android:textSize="12sp"
-        android:background="#1A1A1A"
-        android:stateListAnimator="@null"/>
+        android:layout_height="190dp"
+        android:scrollbars="none"
+        android:overScrollMode="never">
+        <GridLayout
+            android:id="@+id/emoji_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="9"
+            android:padding="2dp"/>
+    </ScrollView>
+
+    <!-- BOTTOM: Keyboard back + Backspace -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:orientation="horizontal"
+        android:background="#0F172A">
+
+        <TextView
+            android:id="@+id/btn_emoji_keyboard"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:text="⌨"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:textColor="#94A3B8"/>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_weight="8"
+            android:layout_height="match_parent"/>
+
+        <TextView
+            android:id="@+id/btn_emoji_del"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:text="⌫"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:textColor="#94A3B8"/>
+    </LinearLayout>
+
 </LinearLayout>
