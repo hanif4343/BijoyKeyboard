@@ -453,23 +453,26 @@ public class MyKeyboardService extends InputMethodService {
         }
         setInputView(emojiPanelView);
 
+        // Category tab bar — TOP
         LinearLayout tabs = emojiPanelView.findViewById(R.id.emoji_category_tabs);
         tabs.removeAllViews();
+
         for (int i = 0; i < CATEGORY_NAMES.length; i++) {
             final int idx = i;
-            Button tab = new Button(this);
+            TextView tab = new TextView(this);
             tab.setText(EMOJI_CATEGORIES[i][0]);
-            tab.setTextSize(18);
-            tab.setPadding(16, 4, 16, 4);
-            tab.setAllCaps(false);
-            tab.setBackgroundColor(i == currentEmojiCategory ?
-                android.graphics.Color.parseColor("#1D4ED8") :
-                android.graphics.Color.TRANSPARENT);
+            tab.setTextSize(22);
+            tab.setGravity(android.view.Gravity.CENTER);
+            tab.setPadding(12, 4, 12, 4);
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT);
-            p.setMargins(2, 2, 2, 2);
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT);
             tab.setLayoutParams(p);
+            if (i == currentEmojiCategory) {
+                tab.setBackgroundColor(android.graphics.Color.parseColor("#1D4ED8"));
+            } else {
+                tab.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            }
             tab.setOnClickListener(v -> {
                 currentEmojiCategory = idx;
                 showEmojiPanel();
@@ -477,29 +480,44 @@ public class MyKeyboardService extends InputMethodService {
             tabs.addView(tab);
         }
 
+        // Grid load
         loadEmojiGrid(emojiPanelView);
 
-        Button backBtn = emojiPanelView.findViewById(R.id.btn_emoji_back);
-        backBtn.setOnClickListener(v -> {
+        // Back to keyboard
+        TextView btnKeyboard = emojiPanelView.findViewById(R.id.btn_emoji_keyboard);
+        btnKeyboard.setOnClickListener(v -> {
             isEmojiMode = false;
             setInputView(keyboardView);
+        });
+
+        // Backspace in emoji panel
+        TextView btnDel = emojiPanelView.findViewById(R.id.btn_emoji_del);
+        btnDel.setOnClickListener(v -> {
+            doHaptic();
+            InputConnection ic = getCurrentInputConnection();
+            if (ic != null) ic.deleteSurroundingText(1, 0);
         });
     }
 
     private void loadEmojiGrid(View panel) {
-        LinearLayout grid = panel.findViewById(R.id.emoji_grid);
+        GridLayout grid = panel.findViewById(R.id.emoji_grid);
         grid.removeAllViews();
+
+        // Screen width থেকে cell size বের করি
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int cellSize = screenWidth / 9;
+
         String[] emojis = EMOJI_CATEGORIES[currentEmojiCategory];
         for (int i = 1; i < emojis.length; i++) {
             final String emoji = emojis[i];
-            Button btn = new Button(this);
+            TextView btn = new TextView(this);
             btn.setText(emoji);
-            btn.setTextSize(22);
-            btn.setPadding(4, 4, 4, 4);
-            btn.setAllCaps(false);
-            btn.setBackground(null);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(52, 52);
-            p.setMargins(2, 2, 2, 2);
+            btn.setTextSize(24);
+            btn.setGravity(android.view.Gravity.CENTER);
+            GridLayout.LayoutParams p = new GridLayout.LayoutParams();
+            p.width = cellSize;
+            p.height = cellSize;
+            p.setMargins(1, 1, 1, 1);
             btn.setLayoutParams(p);
             btn.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
@@ -508,6 +526,10 @@ public class MyKeyboardService extends InputMethodService {
             });
             grid.addView(btn);
         }
+
+        // Scroll to top
+        ScrollView scroll = panel.findViewById(R.id.emoji_scroll);
+        if (scroll != null) scroll.scrollTo(0, 0);
     }
 
     private String getEmoji(String tag) {
