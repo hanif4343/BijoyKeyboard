@@ -83,9 +83,32 @@ public class MyKeyboardService extends InputMethodService {
     public View onCreateInputView() {
         keyboardView = getLayoutInflater().inflate(R.layout.keyboard_layout, null);
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        loadClipboardHistory();
         setupKeyboard();
         updateKeyLabels();
         return keyboardView;
+    }
+
+    private static final String CLIP_PREFS = "clipboard_history";
+    private static final String CLIP_KEY   = "history";
+    private static final int    CLIP_MAX   = 20;
+
+    private void saveClipboardHistory() {
+        StringBuilder sb = new StringBuilder();
+        for (String s : clipboardHistory) sb.append(s).append("||");
+        getSharedPreferences(CLIP_PREFS, MODE_PRIVATE).edit()
+            .putString(CLIP_KEY, sb.toString()).apply();
+    }
+
+    private void loadClipboardHistory() {
+        String raw = getSharedPreferences(CLIP_PREFS, MODE_PRIVATE)
+            .getString(CLIP_KEY, "");
+        clipboardHistory.clear();
+        if (!raw.isEmpty()) {
+            for (String s : raw.split("\\|\\|")) {
+                if (!s.isEmpty()) clipboardHistory.add(s);
+            }
+        }
     }
 
     private void updateClipboardItems() {
@@ -95,12 +118,13 @@ public class MyKeyboardService extends InputMethodService {
             if (clip != null && clip.getItemCount() > 0) {
                 ClipData.Item item = clip.getItemAt(0);
                 if (item != null && item.getText() != null) {
-                    String text = item.getText().toString();
-                    if (!clipboardHistory.contains(text)) {
+                    String text = item.getText().toString().trim();
+                    if (!text.isEmpty() && !clipboardHistory.contains(text)) {
                         clipboardHistory.add(0, text);
-                        if (clipboardHistory.size() > 10) {
+                        if (clipboardHistory.size() > CLIP_MAX) {
                             clipboardHistory.remove(clipboardHistory.size() - 1);
                         }
+                        saveClipboardHistory();
                     }
                 }
             }
@@ -156,6 +180,27 @@ public class MyKeyboardService extends InputMethodService {
                 }
                 showClipboardInUI();
                 return true;
+            });
+
+            // Double tap → Delete from history
+            btn.setOnClickListener(new android.view.View.OnClickListener() {
+                private long lastClick = 0;
+                @Override public void onClick(android.view.View v) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastClick < 400) {
+                        // Double tap — delete
+                        clipboardHistory.remove(text);
+                        unpinItem(text);
+                        saveClipboardHistory();
+                        showClipboardInUI();
+                        Toast.makeText(MyKeyboardService.this, "মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show();
+                    } else {
+                        // Single tap — paste
+                        InputConnection ic = getCurrentInputConnection();
+                        if (ic != null) ic.commitText(text, 1);
+                    }
+                    lastClick = now;
+                }
             });
 
             container.addView(btn);
