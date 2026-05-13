@@ -579,7 +579,7 @@ public class MyKeyboardService extends InputMethodService {
                 case "t": return "©";  case "y": return "®";  case "u": return "™";  case "i": return "§";
                 case "o": return "°";  case "p": return "•";
                 case "a": return "√";  case "s": return "π";  case "d": return "Δ";  case "f": return "'";
-                case "g": return "¥";  case "h": return "€";  case "j": return "¢";  case "k": return "←";
+                case "g": return "∴";  case "h": return "€";  case "j": return "¥";  case "k": return "←";
                 case "l": return "→";
                 case "z": return "↑";  case "x": return "↓";  case "c": return "≠";  case "v": return "≈";
                 case "b": return "∞";  case "n": return "±";  case "m": return "μ";
