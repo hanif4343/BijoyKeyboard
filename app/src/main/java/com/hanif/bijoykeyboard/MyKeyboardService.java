@@ -136,8 +136,9 @@ public class MyKeyboardService extends InputMethodService {
                 ClipData.Item item = clip.getItemAt(0);
                 if (item != null && item.getText() != null) {
                     String text = item.getText().toString().trim();
-                    if (!text.isEmpty() && !clipboardHistory.contains(text)) {
-                        clipboardHistory.add(0, text);
+                    if (!text.isEmpty()) {
+                        clipboardHistory.remove(text); // আগে থাকলে সরিয়ে দাও
+                        clipboardHistory.add(0, text); // সবসময় সামনে আনো
                         if (clipboardHistory.size() > CLIP_MAX)
                             clipboardHistory.remove(clipboardHistory.size() - 1);
                         saveClipboardHistory();
