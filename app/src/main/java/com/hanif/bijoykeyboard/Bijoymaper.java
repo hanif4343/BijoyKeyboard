@@ -72,7 +72,8 @@ public class Bijoymaper {
         MAP.put("g", "\u09CD");          // ্ (হসন্ত)
         MAP.put("Shift+G", "\u0964");    // । (দাড়ি)
         MAP.put("\\", "\u09CE");         // ৎ (খণ্ড-ত)
-        MAP.put("Shift+\\", "\u0983");   // ঃ (বিসর্গ)
+        MAP.put("Shift+\\", "\u0983");
+        MAP.put("Shift+|", "\u0983");   // ← এটা add করুন
         MAP.put("Shift+7", "\u0981");    // ঁ (চন্দ্রবিন্দু)
         MAP.put("Shift+9", "\u09ce");    // ৎ (external keyboard)
         MAP.put("Shift+0", "\u0983");    // ঃ (external keyboard)
