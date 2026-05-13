@@ -292,11 +292,15 @@ public class MyKeyboardService extends InputMethodService {
             btnCommaEmoji.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (isSymbolMode) {
+                    if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
                     isEmojiMode = true;
                     isSymbolMode = false;
                     showEmojiPanel();
                 } else {
-                    if (ic != null) ic.commitText(",", 1);
+                    if (ic != null) {
+                        if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                        ic.commitText(",", 1);
+                    }
                 }
             });
         }
@@ -307,7 +311,7 @@ public class MyKeyboardService extends InputMethodService {
                 if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
                 ic.commitText(".", 1);
             }
-            resetStates();
+            isG_Pressed = false;
         });
 
         keyboardView.findViewById(R.id.btn_shift).setOnClickListener(v -> {
@@ -632,6 +636,7 @@ public class MyKeyboardService extends InputMethodService {
         }
 
         if (isSymbolMode) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             ic.commitText(getSymbol(tag, isShiftPressed), 1);
             if (isShiftPressed) { isShiftPressed = false; updateKeyLabels(); }
             return;
@@ -879,6 +884,33 @@ public class MyKeyboardService extends InputMethodService {
 
         if (isEnglishMode) return super.onKeyDown(keyCode, event);
 
+        // ── External keyboard: Shift+9 → ( এবং Shift+0 → ) (হসন্ত/বিসর্গ নয়) ──
+        // মোবাইলের অনস্ক্রিন কীবোর্ডে Shift+9=ৎ, Shift+0=ঃ থাকে,
+        // কিন্তু external keyboard থাকলে bracket দরকার হয়
+        if (event.getDeviceId() != 0 && !isEnglishMode) {
+            // external keyboard detected (deviceId != 0 means physical device)
+            if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_9) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                ic.commitText("(", 1);
+                return true;
+            }
+            if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_0) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                ic.commitText(")", 1);
+                return true;
+            }
+            // Backslash → ৎ, Shift+Backslash → ঃ (external keyboard এ dedicated key)
+            if (keyCode == KeyEvent.KEYCODE_BACKSLASH) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                if (event.isShiftPressed()) {
+                    ic.commitText("\u0983", 1); // ঃ বিসর্গ
+                } else {
+                    ic.commitText("\u09CE", 1); // ৎ হসন্ত
+                }
+                return true;
+            }
+        }
+
         if (event.isPrintingKey() || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)) {
             String tag;
             if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
@@ -888,6 +920,8 @@ public class MyKeyboardService extends InputMethodService {
                 tag = String.valueOf(c).toLowerCase();
             }
             if (event.isShiftPressed() && tag.equals("7")) {
+                // pendingVowel flush করো চন্দ্রবিন্দুর আগে
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
                 processBengaliLogic(Bijoymaper.getUnicode("7", true), ic);
                 return true;
             }
@@ -896,6 +930,9 @@ public class MyKeyboardService extends InputMethodService {
                 processBengaliLogic(res, ic);
                 return true;
             }
+            // Bengali mode-এ কোনো unmapped printable key (যেমন !, ?, ., ,) → pendingVowel flush করো
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            isG_Pressed = false;
         }
         return super.onKeyDown(keyCode, event);
     }
