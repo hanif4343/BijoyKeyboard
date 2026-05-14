@@ -872,8 +872,13 @@ public class MyKeyboardService extends InputMethodService {
         }
 
         // Navigation / Enter / Space → pending vowel flush
-        if (keyCode == KeyEvent.KEYCODE_SPACE ||
-            keyCode == KeyEvent.KEYCODE_ENTER ||
+        if (keyCode == KeyEvent.KEYCODE_SPACE) {
+            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            ic.commitText(" ", 1);  // super নয়, নিজেই space দাও — ordering ঠিক থাকবে
+            isG_Pressed = false;
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_DPAD_LEFT  ||
             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
             keyCode == KeyEvent.KEYCODE_DPAD_UP    ||
