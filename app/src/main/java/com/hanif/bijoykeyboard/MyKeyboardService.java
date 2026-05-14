@@ -932,7 +932,18 @@ public class MyKeyboardService extends InputMethodService {
                 return true;
             }
             // Bengali mode-এ কোনো unmapped printable key (যেমন !, ?, ., ,) → pendingVowel flush করো
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            // তারপর নিজেই commitText করো, super-কে দিলে pendingVowel এর আগে character চলে আসে
+            if (!pendingVowel.isEmpty()) {
+                ic.commitText(pendingVowel, 1);
+                pendingVowel = "";
+                // আসল character-টাও commit করো (super.onKeyDown আর দরকার নেই)
+                char actualChar = (char) event.getUnicodeChar(event.getMetaState());
+                if (actualChar > 0) {
+                    ic.commitText(String.valueOf(actualChar), 1);
+                    isG_Pressed = false;
+                    return true;
+                }
+            }
             isG_Pressed = false;
         }
         return super.onKeyDown(keyCode, event);
