@@ -539,8 +539,8 @@ public class MyKeyboardService extends InputMethodService {
                 case "q": return "["; case "w": return "]"; case "e": return "{"; case "r": return "}";
                 case "t": return "©"; case "y": return "®"; case "u": return "™"; case "i": return "§";
                 case "o": return "°"; case "p": return "•";
-                case "a": return "√"; case "s": return "π"; case "d": return "Δ"; case "f": return "£";
-                case "g": return "¥"; case "h": return "€"; case "j": return "¢"; case "k": return "←";
+                case "a": return "√"; case "s": return "π"; case "d": return "Δ"; case "f": return "'";
+                case "g": return "∴"; case "h": return "€"; case "j": return "¥"; case "k": return "←";
                 case "l": return "→";
                 case "z": return "↑"; case "x": return "↓"; case "c": return "≠"; case "v": return "≈";
                 case "b": return "∞"; case "n": return "±"; case "m": return "μ";
@@ -621,7 +621,6 @@ public class MyKeyboardService extends InputMethodService {
                 ic.commitText("\u0986", 1); isG_Pressed = false; return;
             }
             prevChar = getPreviousChar(ic);
-            if (prevChar.equals("\u0985")) { ic.deleteSurroundingText(1, 0); ic.commitText("\u0986", 1); isG_Pressed = false; return; }
             if (pendingVowel.equals("\u09C7")) { pendingVowel = ""; ic.commitText("\u09CB", 1); isG_Pressed = false; return; }
             if (prevChar.equals("\u09C7")) { ic.deleteSurroundingText(1, 0); ic.commitText("\u09CB", 1); isG_Pressed = false; return; }
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
@@ -706,12 +705,6 @@ public class MyKeyboardService extends InputMethodService {
         // বিজয় নিয়ম: এই তিনটে কার আগে press হয়, ব্যঞ্জন পরে
         // তাই এখানে pendingVowel এ রেখে দাও — ব্যঞ্জন আসলে section 9 এ flush হবে
         if (result.equals("\u09BF") || result.equals("\u09C7") || result.equals("\u09C8")) {
-            prevChar = getPreviousChar(ic);
-            if (prevChar.equals("\u0985")) {
-                ic.deleteSurroundingText(1, 0);
-                ic.commitText(convertKarToVowel(result), 1);
-                isG_Pressed = false; return;
-            }
             // আগের pending flush করে নতুন pending রাখো
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
             pendingVowel = result;
@@ -726,13 +719,7 @@ public class MyKeyboardService extends InputMethodService {
             ic.commitText(result, 1);
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
         } else {
-            // অন্য কার (া ছাড়া, যেমন ু, ূ, ৃ ইত্যাদি)
-            prevChar = getPreviousChar(ic);
-            if (prevChar.equals("\u0985")) {
-                ic.deleteSurroundingText(1, 0);
-                ic.commitText(convertKarToVowel(result), 1);
-                isG_Pressed = false; return;
-            }
+            // অন্য কার (ু, ূ, ৃ ইত্যাদি)
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
             ic.commitText(result, 1);
         }
