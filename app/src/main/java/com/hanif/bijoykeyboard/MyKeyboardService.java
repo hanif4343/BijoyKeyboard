@@ -242,7 +242,7 @@ public class MyKeyboardService extends InputMethodService {
                     showEmojiPanel();
                 } else {
                     if (ic != null) {
-                        if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                        pendingVowel = "";  // discard
                         ic.commitText(",", 1);
                     }
                 }
@@ -252,7 +252,7 @@ public class MyKeyboardService extends InputMethodService {
         keyboardView.findViewById(R.id.btn_period).setOnClickListener(v -> {
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
-                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                pendingVowel = "";  // discard
                 ic.commitText(".", 1);
             }
             isG_Pressed = false;
@@ -283,7 +283,7 @@ public class MyKeyboardService extends InputMethodService {
             doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            pendingVowel = "";  // discard — ক+ি+space → "ক " হবে, "কি " নয়
             if (isG_Pressed && !isEnglishMode) {
                 ic.commitText("\u09CD", 1);
                 ic.commitText(" ", 1);
@@ -299,7 +299,7 @@ public class MyKeyboardService extends InputMethodService {
             doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
-                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                pendingVowel = "";  // discard
                 ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
             }
             isG_Pressed = false;
@@ -591,7 +591,7 @@ public class MyKeyboardService extends InputMethodService {
             }
         }
         if (isSymbolMode) {
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            pendingVowel = "";  // discard
             ic.commitText(getSymbol(tag, isShiftPressed), 1);
             if (isShiftPressed) { isShiftPressed = false; updateKeyLabels(); }
             return;
@@ -755,21 +755,21 @@ public class MyKeyboardService extends InputMethodService {
             resetStates(); updateKeyLabels(); return true;
         }
 
-        // Space — pendingVowel flush করে নিজেই commit (super দিলে ordering ভাঙে)
+        // Space — pendingVowel discard করে নিজেই commit
         if (keyCode == KeyEvent.KEYCODE_SPACE) {
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            pendingVowel = "";  // discard — ক+ি+space → "ক " হবে
             ic.commitText(" ", 1);
             isG_Pressed = false;
             return true;
         }
 
-        // Enter / Arrow — pending flush করে super-এ দাও
+        // Enter / Arrow — pending discard করে super-এ দাও
         if (keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
             keyCode == KeyEvent.KEYCODE_DPAD_UP ||
             keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+            pendingVowel = "";  // discard
             isG_Pressed = false;
             return super.onKeyDown(keyCode, event);
         }
@@ -782,9 +782,18 @@ public class MyKeyboardService extends InputMethodService {
                 tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
             else { char c = (char) event.getUnicodeChar(); tag = String.valueOf(c).toLowerCase(); }
 
-            if (event.isShiftPressed() && tag.equals("7")) { processBengaliLogic(Bijoymaper.getUnicode("7", true), ic); return true; }
-            if (event.isShiftPressed() && tag.equals("9")) { processBengaliLogic(Bijoymaper.getUnicode("9", true), ic); return true; }
-            if (event.isShiftPressed() && tag.equals("0")) { processBengaliLogic(Bijoymaper.getUnicode("0", true), ic); return true; }
+            // External keyboard: Shift+9 → (, Shift+0 → ) — ৎ/ঃ নয়
+            if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_9) {
+                pendingVowel = ""; isG_Pressed = false;
+                ic.commitText("(", 1); return true;
+            }
+            if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_0) {
+                pendingVowel = ""; isG_Pressed = false;
+                ic.commitText(")", 1); return true;
+            }
+            if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_7) {
+                processBengaliLogic(Bijoymaper.getUnicode("7", true), ic); return true;
+            }
 
             String res = Bijoymaper.getUnicode(tag, event.isShiftPressed());
             if (res != null && !res.isEmpty() && !res.equals(tag)) {
@@ -792,16 +801,14 @@ public class MyKeyboardService extends InputMethodService {
                 return true;
             }
 
-            // Unmapped printable key (যেমন , . ! ?) — pendingVowel flush করে নিজেই commit
-            if (!pendingVowel.isEmpty()) {
-                ic.commitText(pendingVowel, 1);
-                pendingVowel = "";
-                char actualChar = (char) event.getUnicodeChar(event.getMetaState());
-                if (actualChar > 0) {
-                    ic.commitText(String.valueOf(actualChar), 1);
-                    isG_Pressed = false;
-                    return true;
-                }
+            // Unmapped printable key (যেমন , . ! ? । ইত্যাদি)
+            // pendingVowel discard করো — ক+ি এর পরে , দিলে "কি," হবে না, শুধু "ক," হবে
+            char actualChar = (char) event.getUnicodeChar(event.getMetaState());
+            if (actualChar > 0) {
+                pendingVowel = "";  // commit না করে বাদ
+                ic.commitText(String.valueOf(actualChar), 1);
+                isG_Pressed = false;
+                return true;
             }
             isG_Pressed = false;
         }
@@ -933,11 +940,7 @@ public class MyKeyboardService extends InputMethodService {
     // HELPERS
     // ══════════════════════════════════════
     private void resetStates() {
-        if (!pendingVowel.isEmpty()) {
-            InputConnection ic = getCurrentInputConnection();
-            if (ic != null) ic.commitText(pendingVowel, 1);
-            pendingVowel = "";
-        }
+        pendingVowel = "";  // discard — commit না করে বাদ
         isG_Pressed = false;
     }
 
