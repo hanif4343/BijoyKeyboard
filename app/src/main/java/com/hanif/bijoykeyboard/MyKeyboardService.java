@@ -750,9 +750,18 @@ public class MyKeyboardService extends InputMethodService {
         }
 
         // Alt+Space — ভাষা পরিবর্তন
+        // external কিবোর্ডে Alt/Space একসাথে একটু বেশি সময় চাপা থাকলে সিস্টেম
+        // key-repeat event পাঠায় (একই keyDown বারবার ফায়ার হয়)। repeatCount চেক
+        // না করলে প্রতিটা repeat event-এ mode আবার toggle হয়ে যায় — ফলে ভাষা
+        // চেন্জ হয়ে আবার নিজে নিজে আগের অবস্থায় ফিরে যায় (অথবা মোটেও চেন্জ হয় না,
+        // কারণ জোড় সংখ্যক toggle-এ কোনো পরিবর্তন বোঝা যায় না)। তাই শুধু আসল
+        // (repeat নয়) key press-এই toggle করা হচ্ছে।
         if (event.isAltPressed() && keyCode == KeyEvent.KEYCODE_SPACE) {
-            isEnglishMode = !isEnglishMode; isEmojiMode = false;
-            resetStates(); updateKeyLabels(); return true;
+            if (event.getRepeatCount() == 0) {
+                isEnglishMode = !isEnglishMode; isEmojiMode = false;
+                resetStates(); updateKeyLabels();
+            }
+            return true;
         }
 
         // Space — pendingVowel discard করে নিজেই commit
