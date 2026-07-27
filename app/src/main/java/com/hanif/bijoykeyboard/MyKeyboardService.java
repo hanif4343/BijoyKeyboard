@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.GridLayout;
@@ -44,6 +45,11 @@ public class MyKeyboardService extends InputMethodService {
     // SharedPreferences("word_freq")-এ persist হয়, app বন্ধ করলেও থাকবে।
     private HashMap<String, Integer> adaptiveWords = new HashMap<>();
     private static final int MAX_ADAPTIVE_WORDS = 500;
+
+    // Space বাটনে ৩ সেকেন্ড হোল্ড করলে সিস্টেমের কিবোর্ড-সুইচার (অন্য কিবোর্ড অ্যাপ
+    // বেছে নেওয়ার ডায়ালগ) খুলবে। এই ফ্ল্যাগ দিয়ে বোঝা হয় লং-প্রেস ট্রিগার হয়েছে
+    // কিনা, যাতে আঙুল তোলার সময় ভুলে একটা space কমিট না হয়ে যায়।
+    private boolean spaceLongPressTriggered = false;
     private boolean isShiftPressed = false;
     private boolean isSymbolMode = false;
     private boolean isEmojiMode = false;
@@ -464,7 +470,36 @@ public class MyKeyboardService extends InputMethodService {
             updateKeyLabels();
         });
 
-        keyboardView.findViewById(R.id.btn_space).setOnClickListener(v -> {
+        Button btnSpace = keyboardView.findViewById(R.id.btn_space);
+
+        final Runnable spaceLongPressRunnable = () -> {
+            spaceLongPressTriggered = true;
+            doHaptic();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showInputMethodPicker();
+        };
+
+        btnSpace.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    spaceLongPressTriggered = false;
+                    repeatUpdateHandler.postDelayed(spaceLongPressRunnable, 3000);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    repeatUpdateHandler.removeCallbacks(spaceLongPressRunnable);
+                    break;
+            }
+            return false; // স্বাভাবিক ক্লিক প্রসেসিং চলতে দেওয়া হচ্ছে
+        });
+
+        btnSpace.setOnClickListener(v -> {
+            if (spaceLongPressTriggered) {
+                // কিবোর্ড-সুইচার খোলার পর আঙুল তোলায় যে ক্লিক আসে, সেটাতে আর
+                // space বসানো হবে না
+                spaceLongPressTriggered = false;
+                return;
+            }
             doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
