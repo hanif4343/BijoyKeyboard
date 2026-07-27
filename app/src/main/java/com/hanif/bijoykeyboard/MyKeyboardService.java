@@ -617,22 +617,44 @@ public class MyKeyboardService extends InputMethodService {
         LinearLayout tabs = emojiPanelView.findViewById(R.id.emoji_category_tabs);
         tabs.removeAllViews();
 
+        float density = getResources().getDisplayMetrics().density;
+        int chipRadius = (int) (14 * density);
+        int chipMarginH = (int) (4 * density);
+        int chipMarginV = (int) (6 * density);
+        int chipPadH = (int) (14 * density);
+        int chipPadV = (int) (6 * density);
+
         for (int i = 0; i < CATEGORY_NAMES.length; i++) {
             final int idx = i;
             TextView tab = new TextView(this);
             tab.setText(EMOJI_CATEGORIES[i][0]);
-            tab.setTextSize(22);
+            tab.setTextSize(20);
             tab.setGravity(android.view.Gravity.CENTER);
-            tab.setPadding(12, 4, 12, 4);
+            tab.setPadding(chipPadH, chipPadV, chipPadH, chipPadV);
+
+            // প্রতিটা ক্যাটাগরি ট্যাবকে গোলাকৃতির, হালকা কালারের একটা "বক্স/চিপ"
+            // হিসেবে দেখানো হচ্ছে — যাতে বোঝা যায় এগুলো হেডিং/গ্রুপ বাটন,
+            // শুধু plain টেক্সট নয়। নির্বাচিত ক্যাটাগরি সলিড নীল, বাকিগুলো
+            // হালকা (semi-transparent সাদা) বক্স।
+            android.graphics.drawable.GradientDrawable chip =
+                    new android.graphics.drawable.GradientDrawable();
+            chip.setCornerRadius(chipRadius);
+            if (i == currentEmojiCategory) {
+                chip.setColor(android.graphics.Color.parseColor("#1D4ED8"));
+                tab.setTextColor(android.graphics.Color.WHITE);
+            } else {
+                chip.setColor(android.graphics.Color.parseColor("#33FFFFFF")); // হালকা সাদা
+                chip.setStroke((int) (1 * density), android.graphics.Color.parseColor("#55FFFFFF"));
+                tab.setTextColor(android.graphics.Color.parseColor("#E5E7EB"));
+            }
+            tab.setBackground(chip);
+
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            p.setMargins(chipMarginH, chipMarginV, chipMarginH, chipMarginV);
             tab.setLayoutParams(p);
-            if (i == currentEmojiCategory) {
-                tab.setBackgroundColor(android.graphics.Color.parseColor("#1D4ED8"));
-            } else {
-                tab.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            }
+
             tab.setOnClickListener(v -> {
                 currentEmojiCategory = idx;
                 showEmojiPanel();
