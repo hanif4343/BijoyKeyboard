@@ -17,25 +17,57 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Bijoy by Hanif"
-            android:textColor="#9CA3AF"
-            android:textSize="10sp"
-            android:layout_marginEnd="8dp"/>
+            android:text="Bijoy"
+            android:textColor="#6B7280"
+            android:textSize="8sp"
+            android:maxLines="1"
+            android:layout_marginEnd="4dp"/>
 
-        <HorizontalScrollView
+        <!-- ক্লিপবোর্ড টগল আইকন: ট্যাপ করলে নিচের ক্লিপবোর্ড স্ট্রিপ দেখাবে/লুকাবে -->
+        <TextView
+            android:id="@+id/btn_clipboard_toggle"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:text="📋"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:background="@drawable/key_background"
+            android:layout_marginEnd="4dp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <!-- এই ফ্রেমে suggestion_strip আর ক্লিপবোর্ড স্ট্রিপ একই জায়গা শেয়ার করে —
+             একসাথে একটাই দেখা যাবে, ক্লিপবোর্ড আইকনে ট্যাপ করলে সোয়াপ হবে -->
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="match_parent"
-            android:scrollbars="none">
+            android:layout_height="match_parent">
 
+            <!-- এখানে ভবিষ্যতে word-suggestion চিপগুলো বসবে -->
             <LinearLayout
-                android:id="@+id/clipboard_container"
-                android:layout_width="wrap_content"
+                android:id="@+id/suggestion_strip"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:padding="2dp"/>
-        </HorizontalScrollView>
+                android:visibility="visible"/>
+
+            <HorizontalScrollView
+                android:id="@+id/clipboard_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/clipboard_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="2dp"/>
+            </HorizontalScrollView>
+        </FrameLayout>
 
         <!-- Mic icon — top bar এ -->
         <ImageView
