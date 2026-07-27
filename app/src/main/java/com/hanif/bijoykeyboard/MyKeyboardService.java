@@ -28,6 +28,8 @@ import android.os.Handler;
 import android.view.MotionEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MyKeyboardService extends InputMethodService {
 
@@ -37,6 +39,11 @@ public class MyKeyboardService extends InputMethodService {
     private boolean isEnglishMode = false;
     private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
     private long lastShiftTapTime = 0;       // ডাবল ট্যাপ ডিটেকশনের জন্য
+
+    // Adaptive word suggestion: ব্যবহারকারী যে শব্দ যতবার লিখেছে, তার count।
+    // SharedPreferences("word_freq")-এ persist হয়, app বন্ধ করলেও থাকবে।
+    private HashMap<String, Integer> adaptiveWords = new HashMap<>();
+    private static final int MAX_ADAPTIVE_WORDS = 500;
     private boolean isShiftPressed = false;
     private boolean isSymbolMode = false;
     private boolean isEmojiMode = false;
@@ -61,6 +68,7 @@ public class MyKeyboardService extends InputMethodService {
             }
         }
         resetStates();
+        updateSuggestionStrip();
     }
 
     class RptUpdater implements Runnable {
@@ -79,6 +87,7 @@ public class MyKeyboardService extends InputMethodService {
         if (clipboard != null) {
             clipboard.addPrimaryClipChangedListener(() -> updateClipboardItems());
         }
+        loadAdaptiveWords();
     }
 
     @Override
@@ -197,6 +206,134 @@ public class MyKeyboardService extends InputMethodService {
             .putString("pins", sb.toString()).apply();
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // WORD SUGGESTION — adaptive learning + starter dictionary
+    // ══════════════════════════════════════════════════════════════════
+
+    private void loadAdaptiveWords() {
+        android.content.SharedPreferences prefs = getSharedPreferences("word_freq", MODE_PRIVATE);
+        String raw = prefs.getString("freq", "");
+        adaptiveWords.clear();
+        if (!raw.isEmpty()) {
+            for (String pair : raw.split("\\|\\|")) {
+                if (pair.isEmpty()) continue;
+                int sep = pair.lastIndexOf(':');
+                if (sep <= 0) continue;
+                String w = pair.substring(0, sep);
+                try {
+                    adaptiveWords.put(w, Integer.parseInt(pair.substring(sep + 1)));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+    }
+
+    private void saveAdaptiveWords() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Integer> e : adaptiveWords.entrySet()) {
+            sb.append(e.getKey()).append(":").append(e.getValue()).append("||");
+        }
+        getSharedPreferences("word_freq", MODE_PRIVATE).edit()
+            .putString("freq", sb.toString()).apply();
+    }
+
+    // স্পেস/এন্টার/দাঁড়ি/কমার আগে যে শব্দটা লেখা শেষ হলো, সেটা শেখানো হচ্ছে —
+    // পরের বার একই শব্দ লিখতে গেলে এটা দ্রুত suggestion-এ উপরে চলে আসবে
+    private void learnWord(String word) {
+        if (word == null) return;
+        word = word.trim();
+        if (word.length() < 2) return; // একটা মাত্র অক্ষর শেখানোর দরকার নেই
+        Integer count = adaptiveWords.get(word);
+        adaptiveWords.put(word, (count == null ? 0 : count) + 1);
+
+        if (adaptiveWords.size() > MAX_ADAPTIVE_WORDS) {
+            String minKey = null; int minVal = Integer.MAX_VALUE;
+            for (Map.Entry<String, Integer> e : adaptiveWords.entrySet()) {
+                if (e.getValue() < minVal) { minVal = e.getValue(); minKey = e.getKey(); }
+            }
+            if (minKey != null) adaptiveWords.remove(minKey);
+        }
+        saveAdaptiveWords();
+    }
+
+    private void learnCurrentWord() {
+        learnWord(getCurrentWordBeingTyped());
+    }
+
+    // কার্সরের ঠিক আগে যে শব্দটা লেখা হচ্ছে (এখনো space/দাঁড়ি পড়েনি), সেটা বের করা
+    private String getCurrentWordBeingTyped() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+        CharSequence before = ic.getTextBeforeCursor(40, 0);
+        if (before == null) return "";
+        String text = before.toString();
+        int i = text.length();
+        while (i > 0 && !isWordBoundaryChar(text.charAt(i - 1))) i--;
+        return text.substring(i);
+    }
+
+    private boolean isWordBoundaryChar(char c) {
+        return Character.isWhitespace(c) || ",।.!?;:()\"'—–-…\n".indexOf(c) >= 0;
+    }
+
+    // এখন যা টাইপ হচ্ছে তার prefix মিলিয়ে সবচেয়ে সম্ভাব্য শব্দগুলো suggestion_strip-এ দেখানো।
+    // adaptive (ইউজারের নিজের লেখা) শব্দের weight বেশি, starter dictionary baseline।
+    private void updateSuggestionStrip() {
+        if (keyboardView == null) return;
+        LinearLayout strip = keyboardView.findViewById(R.id.suggestion_strip);
+        if (strip == null) return;
+        strip.removeAllViews();
+
+        final String prefix = getCurrentWordBeingTyped();
+        if (prefix.isEmpty()) return;
+
+        HashMap<String, Integer> scores = new HashMap<>();
+        for (Map.Entry<String, Integer> e : adaptiveWords.entrySet()) {
+            if (!e.getKey().equals(prefix) && e.getKey().startsWith(prefix)) {
+                scores.put(e.getKey(), e.getValue() * 10); // নিজের শেখা শব্দ অগ্রাধিকার পাবে
+            }
+        }
+        for (String w : STARTER_WORDS) {
+            if (!scores.containsKey(w) && !w.equals(prefix) && w.startsWith(prefix)) {
+                scores.put(w, 1);
+            }
+        }
+        if (scores.isEmpty()) return;
+
+        ArrayList<String> candidates = new ArrayList<>(scores.keySet());
+        candidates.sort((a, b) -> scores.get(b) - scores.get(a));
+
+        int shown = 0;
+        for (String word : candidates) {
+            if (shown >= 4) break;
+            addSuggestionChip(strip, word, prefix);
+            shown++;
+        }
+    }
+
+    private void addSuggestionChip(LinearLayout strip, String word, String prefix) {
+        TextView chip = new TextView(this);
+        chip.setText(word);
+        chip.setTextSize(13);
+        chip.setTextColor(0xFFE5E7EB);
+        chip.setGravity(android.view.Gravity.CENTER);
+        chip.setPadding(16, 4, 16, 4);
+        chip.setBackgroundResource(R.drawable.key_background);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.setMargins(4, 4, 4, 4);
+        chip.setLayoutParams(p);
+        chip.setOnClickListener(v -> {
+            InputConnection ic = getCurrentInputConnection();
+            if (ic == null) return;
+            doHaptic();
+            if (prefix.length() > 0) ic.deleteSurroundingText(prefix.length(), 0);
+            ic.commitText(word + " ", 1);
+            learnWord(word);
+            updateSuggestionStrip();
+        });
+        strip.addView(chip);
+    }
+
     private void setupKeyboard() {
         int[] numberRowIds = {
                 R.id.btn_1, R.id.btn_2, R.id.btn_3, R.id.btn_4, R.id.btn_5,
@@ -218,6 +355,7 @@ public class MyKeyboardService extends InputMethodService {
                             String res = Bijoymaper.getUnicode(tag, isShiftPressed);
                             processBengaliLogic(res, ic);
                             if (isShiftPressed && !isCapsLock) { isShiftPressed = false; updateKeyLabels(); }
+                            updateSuggestionStrip();
                             return;
                         }
                         ic.commitText(((Button) v).getText().toString(), 1);
@@ -252,8 +390,10 @@ public class MyKeyboardService extends InputMethodService {
                     showEmojiPanel();
                 } else {
                     if (ic != null) {
+                        learnCurrentWord();
                         pendingVowel = "";  // discard
                         ic.commitText(",", 1);
+                        updateSuggestionStrip();
                     }
                 }
             });
@@ -262,8 +402,10 @@ public class MyKeyboardService extends InputMethodService {
         keyboardView.findViewById(R.id.btn_period).setOnClickListener(v -> {
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
+                learnCurrentWord();
                 pendingVowel = "";  // discard
                 ic.commitText(".", 1);
+                updateSuggestionStrip();
             }
             isG_Pressed = false;
         });
@@ -326,6 +468,7 @@ public class MyKeyboardService extends InputMethodService {
             doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
+            learnCurrentWord();
             pendingVowel = "";  // discard — ক+ি+space → "ক " হবে, "কি " নয়
             if (isG_Pressed && !isEnglishMode) {
                 ic.commitText("\u09CD", 1);
@@ -336,14 +479,17 @@ public class MyKeyboardService extends InputMethodService {
                 ic.commitText(" ", 1);
                 isG_Pressed = false;
             }
+            updateSuggestionStrip();
         });
 
         keyboardView.findViewById(R.id.btn_enter).setOnClickListener(v -> {
             doHaptic();
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
+                learnCurrentWord();
                 pendingVowel = "";  // discard
                 ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                updateSuggestionStrip();
             }
             isG_Pressed = false;
         });
@@ -448,6 +594,82 @@ public class MyKeyboardService extends InputMethodService {
     // ══════════════════════════════════════
     // EMOJI PANEL
     // ══════════════════════════════════════
+
+    // ══════════════════════════════════════
+    // WORD SUGGESTION — starter dictionary
+    // কমন বাংলা শব্দ + ব্যবহারকারীর পরিচিত নাম/জায়গার নাম (হানিফ, সোয়াদ,
+    // সান্তনা, নশিরপুর, আব্বা, মা, হাবিবা, হিন্দা ইত্যাদি)। adaptive learning-এর
+    // সাথে মিলে এই লিস্টটা 'cold start' suggestion দেয় — প্রথম দিনেই কিছু
+    // suggestion দেখা যাবে, পরে ব্যবহারকারীর নিজের লেখা শব্দ শেখা হতে থাকবে।
+    // ══════════════════════════════════════
+    private static final String[] STARTER_WORDS = {
+        "হানিফ","সোয়াদ","সান্তনা","নশিরপুর","আব্বা","মা","হাবিবা","হিন্দা","আমি","আমরা",
+        "তুমি","তোমরা","তিনি","তারা","সে","এই","ওই","আপনি","আপনারা","আমার",
+        "আমাদের","তোমার","তোমাদের","তার","তাদের","এটা","ওটা","এটি","ওটি","আমাকে",
+        "তোমাকে","তাকে","আমাদেরকে","তোমাদেরকে","তাদেরকে","নিজে","নিজেই","কেউ","কেউকে","কি",
+        "কী","কে","কোথায়","কখন","কেন","কিভাবে","কীভাবে","কোন","কয়টা","কতটা",
+        "কতদিন","কার","কাদের","কোনটা","কোনগুলো","করি","করো","করে","করেন","করছি",
+        "করছে","করছেন","করব","করবে","করবেন","করেছি","করেছে","করেছেন","করা","করতে",
+        "করলে","করলাম","করলো","করলেন","যাই","যাও","যায়","যান","যাচ্ছি","যাচ্ছে",
+        "যাচ্ছেন","যাব","যাবে","যাবেন","গিয়েছি","গিয়েছে","গিয়েছেন","যাওয়া","গেলাম","গেলো",
+        "আসি","আসো","আসে","আসেন","আসছি","আসছে","আসছেন","আসব","আসবে","আসবেন",
+        "এসেছি","এসেছে","এসেছেন","আসা","এলাম","এলো","খাই","খাও","খায়","খান",
+        "খাচ্ছি","খাচ্ছে","খাচ্ছেন","খাব","খাবে","খাবেন","খেয়েছি","খেয়েছে","খেয়েছেন","খাওয়া",
+        "দেখি","দেখো","দেখে","দেখেন","দেখছি","দেখছে","দেখছেন","দেখব","দেখবে","দেখবেন",
+        "দেখেছি","দেখেছে","দেখেছেন","দেখা","বলি","বলো","বলে","বলেন","বলছি","বলছে",
+        "বলছেন","বলব","বলবে","বলবেন","বলেছি","বলেছে","বলেছেন","বলা","বললাম","বললো",
+        "বললেন","শুনি","শুনো","শুনে","শুনেন","শুনছি","শুনছে","শুনছেন","শুনব","শুনবে",
+        "শুনবেন","নিই","নিয়ে","নিলাম","নিলো","নিলেন","নেব","নেবে","নেবেন","দিই",
+        "দিয়ে","দিলাম","দিলো","দিলেন","দেব","দেবে","দেবেন","দেওয়া","হই","হও",
+        "হয়","হন","হচ্ছি","হচ্ছে","হচ্ছেন","হব","হবে","হবেন","হয়েছি","হয়েছে",
+        "হয়েছেন","হওয়া","হলাম","হলো","হলেন","আছি","আছো","আছে","আছেন","থাকি",
+        "থাকো","থাকে","থাকেন","থাকব","থাকবে","থাকবেন","থাকা","ছিলাম","ছিলো","ছিলেন",
+        "লাগবে","লাগে","লাগছে","পারি","পারো","পারে","পারেন","পারব","পারবে","পারবেন",
+        "পারা","জানি","জানো","জানে","জানেন","জানতাম","জানব","জানবে","জানবেন","জানা",
+        "চাই","চাও","চায়","চান","চেয়েছি","চেয়েছে","চেয়েছেন","চাওয়া","পাই","পাও",
+        "পায়","পান","পেয়েছি","পেয়েছে","পেয়েছেন","পাওয়া","লিখি","লিখো","লিখে","লিখেন",
+        "লিখছি","লিখব","লিখবে","লিখবেন","লেখা","লিখেছি","পড়ি","পড়ো","পড়ে","পড়েন",
+        "পড়ছি","পড়ব","পড়বে","পড়বেন","পড়া","পড়েছি","ঘুমাই","ঘুমাও","ঘুমায়","ঘুমান",
+        "ঘুমাচ্ছি","ঘুমানো","হাসি","হাসো","হাসে","হাসেন","হাসছি","হাসা","কাঁদি","কাঁদে",
+        "কান্না","বসি","বসো","বসে","বসেন","বসছি","বসা","দাঁড়াই","দাঁড়ায়","দাঁড়ানো",
+        "চলি","চলো","চলে","চলেন","চলছি","চলা","হাঁটি","হাঁটে","হাঁটা","দৌড়াই",
+        "দৌড়ানো","খেলি","খেলো","খেলে","খেলেন","খেলছি","খেলা","কাজ","আজ","আজকে",
+        "গতকাল","আগামীকাল","পরশু","গতপরশু","এখন","এখনই","তখন","সকাল","দুপুর","বিকাল",
+        "সন্ধ্যা","রাত","রাতে","ভোর","মধ্যরাত","সপ্তাহ","মাস","বছর","দিন","ক্ষণ",
+        "মুহূর্ত","সময়","ঘণ্টা","মিনিট","সেকেন্ড","সোমবার","মঙ্গলবার","বুধবার","বৃহস্পতিবার","শুক্রবার",
+        "শনিবার","রবিবার","জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট",
+        "সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর","পরে","আগে","সাথে","সবসময়","কখনো","কখনোই",
+        "মাঝে","প্রায়ই","আব্বু","আম্মু","বাবা","মামা","মামী","চাচা","চাচী","ফুফা",
+        "ফুফু","খালা","খালু","দাদা","দাদী","নানা","নানী","ভাই","বোন","ভাইয়া",
+        "আপু","আপা","বড়ভাই","ছোটভাই","বড়বোন","ছোটবোন","স্বামী","স্ত্রী","স্বজন","আত্মীয়",
+        "পরিবার","সন্তান","ছেলে","মেয়ে","নাতি","নাতনি","জামাই","বউ","বন্ধু","বান্ধবী",
+        "প্রতিবেশী","চাচাতো","মামাতো","খালাতো","ফুফাতো","বাড়ি","ঘর","দরজা","জানালা","রাস্তা",
+        "শহর","গ্রাম","দেশ","পৃথিবী","আকাশ","মাটি","পানি","জল","আগুন","বাতাস",
+        "গাছ","ফুল","পাতা","ফল","সবজি","খাবার","ভাত","মাছ","মাংস","দুধ",
+        "চা","রুটি","তেল","লবণ","চিনি","মরিচ","বাজার","দোকান","স্কুল","কলেজ",
+        "বিশ্ববিদ্যালয়","হাসপাতাল","অফিস","কারখানা","মসজিদ","মন্দির","বই","খাতা","কলম","পেন্সিল",
+        "ব্যাগ","জামা","কাপড়","জুতা","টাকা","পয়সা","মোবাইল","ফোন","কম্পিউটার","ইন্টারনেট",
+        "টিভি","রেডিও","গাড়ি","বাস","ট্রেন","প্লেন","নৌকা","রিকশা","চাকরি","ব্যবসা",
+        "পরীক্ষা","রেজাল্ট","ছুটি","ভ্রমণ","অনুষ্ঠান","উৎসব","বিয়ে","জন্মদিন","সমস্যা","সমাধান",
+        "কারণ","ফলাফল","পরিকল্পনা","সিদ্ধান্ত","সুযোগ","ইচ্ছা","স্বপ্ন","লক্ষ্য","মন","হৃদয়",
+        "শরীর","মাথা","হাত","পা","চোখ","কান","নাক","মুখ","চুল","দাঁত",
+        "সংবাদ","খবর","তথ্য","কথা","গল্প","কবিতা","গান","সিনেমা","নাটক","ক্রিকেট",
+        "ফুটবল","ভালো","খারাপ","সুন্দর","বড়","ছোট","নতুন","পুরাতন","পুরনো","লম্বা",
+        "খাটো","মোটা","চিকন","গরম","ঠান্ডা","মিষ্টি","টক","ঝাল","নরম","শক্ত",
+        "সহজ","কঠিন","সুখী","দুখী","খুশি","রাগী","ভয়","চিন্তিত","ব্যস্ত","ফ্রি",
+        "ধনী","গরিব","তাজা","পরিষ্কার","নোংরা","উজ্জ্বল","অন্ধকার","শান্ত","অস্থির","স্বাস্থ্যকর",
+        "অসুস্থ","এবং","কিন্তু","অথবা","তাই","তাহলে","তবে","যদি","যদিও","কেননা",
+        "যেমন","অর্থাৎ","মানে","অবশ্যই","হয়তো","সম্ভবত","নিশ্চয়ই","আসলে","সত্যি","মিথ্যা",
+        "এখানে","ওখানে","সেখানে","যেখানে","সবখানে","ভেতরে","বাইরে","উপরে","নিচে","পাশে",
+        "সামনে","পিছনে","মাঝখানে","একসাথে","আলাদা","সবাই","কেউনা","সব","কিছু","সবকিছু",
+        "সালাম","আসসালামু","আলাইকুম","ওয়ালাইকুম","শুকরিয়া","ধন্যবাদ","দুঃখিত","মাফ","ক্ষমা","স্বাগতম",
+        "শুভ","শুভরাত্রি","শুভকামনা","অভিনন্দন","মোবারক","ইনশাআল্লাহ","আলহামদুলিল্লাহ","মাশাআল্লাহ","সুপ্রভাত","শুভেচ্ছা",
+        "ভালোবাসা","দোয়া","বরকত","এক","দুই","তিন","চার","পাঁচ","ছয়","সাত",
+        "আট","নয়","দশ","শত","হাজার","লক্ষ","কোটি","প্রথম","দ্বিতীয়","তৃতীয়",
+        "শেষ","অর্ধেক","hello","thanks","please","sorry","ok","yes","no","okay",
+        "good","morning","love","you","today","tomorrow","work","home","phone","message",
+        "call","time"
+    };
 
     private static final String[][] EMOJI_CATEGORIES = {
         {
@@ -836,6 +1058,7 @@ public class MyKeyboardService extends InputMethodService {
             processBengaliLogic(result, ic);
         }
         if (isShiftPressed && !isCapsLock) { isShiftPressed = false; updateKeyLabels(); }
+        updateSuggestionStrip();
     }
 
     // ══════════════════════════════════════════════════════════════════
