@@ -35,6 +35,8 @@ public class MyKeyboardService extends InputMethodService {
     private ArrayList<String> clipboardHistory = new ArrayList<>();
     private boolean isG_Pressed = false;
     private boolean isEnglishMode = false;
+    private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
+    private long lastShiftTapTime = 0;       // ডাবল ট্যাপ ডিটেকশনের জন্য
     private boolean isShiftPressed = false;
     private boolean isSymbolMode = false;
     private boolean isEmojiMode = false;
@@ -141,6 +143,14 @@ public class MyKeyboardService extends InputMethodService {
             btn.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null) ic.commitText(text, 1);
+                doHaptic();
+                // পেস্ট করার পর ক্লিপবোর্ড স্ট্রিপ বন্ধ করে suggestion স্পেস দেখানো হচ্ছে
+                View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
+                View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
+                if (clipboardScroll != null && suggestionStrip != null) {
+                    clipboardScroll.setVisibility(View.GONE);
+                    suggestionStrip.setVisibility(View.VISIBLE);
+                }
             });
 
             btn.setOnLongClickListener(v -> {
@@ -207,7 +217,7 @@ public class MyKeyboardService extends InputMethodService {
                         if (!isEnglishMode && !isSymbolMode) {
                             String res = Bijoymaper.getUnicode(tag, isShiftPressed);
                             processBengaliLogic(res, ic);
-                            if (isShiftPressed) { isShiftPressed = false; updateKeyLabels(); }
+                            if (isShiftPressed && !isCapsLock) { isShiftPressed = false; updateKeyLabels(); }
                             return;
                         }
                         ic.commitText(((Button) v).getText().toString(), 1);
@@ -259,9 +269,23 @@ public class MyKeyboardService extends InputMethodService {
         });
 
         keyboardView.findViewById(R.id.btn_shift).setOnClickListener(v -> {
-            isShiftPressed = !isShiftPressed;
+            long now = System.currentTimeMillis();
+            boolean isDoubleTap = (now - lastShiftTapTime) < 350;
+            lastShiftTapTime = now;
+
+            if (isDoubleTap && isEnglishMode) {
+                // ডাবল ট্যাপ — শুধু ইংরেজি মোডে ক্যাপস লক টগল হবে
+                isCapsLock = !isCapsLock;
+                isShiftPressed = isCapsLock;
+            } else if (isCapsLock) {
+                // ক্যাপস লক চালু থাকা অবস্থায় সাধারণ ট্যাপ দিলে সেটা অফ হয়ে যাবে
+                isCapsLock = false;
+                isShiftPressed = false;
+            } else {
+                isShiftPressed = !isShiftPressed;
+            }
             updateKeyLabels();
-            v.setAlpha(isShiftPressed ? 0.5f : 1.0f);
+            v.setAlpha(isCapsLock ? 0.3f : (isShiftPressed ? 0.5f : 1.0f));
         });
 
         keyboardView.findViewById(R.id.btn_lang).setOnClickListener(v -> {
@@ -270,6 +294,25 @@ public class MyKeyboardService extends InputMethodService {
             isEmojiMode = false;
             updateKeyLabels();
             resetStates();
+        });
+
+        // ক্লিপবোর্ড টগল আইকন — ট্যাপ করলে ক্লিপবোর্ড স্ট্রিপ দেখাবে/লুকাবে।
+        // কপি করা জিনিসপত্র সবসময় দেখা যাবে না, শুধু এই আইকনে ট্যাপ করলেই দেখা যাবে।
+        keyboardView.findViewById(R.id.btn_clipboard_toggle).setOnClickListener(v -> {
+            doHaptic();
+            View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
+            View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
+            if (clipboardScroll == null || suggestionStrip == null) return;
+
+            boolean isOpen = clipboardScroll.getVisibility() == View.VISIBLE;
+            if (isOpen) {
+                clipboardScroll.setVisibility(View.GONE);
+                suggestionStrip.setVisibility(View.VISIBLE);
+            } else {
+                showClipboardInUI(); // এখনকার একই লজিক দিয়ে সবশেষ কপি করা জিনিস রিফ্রেশ করা
+                suggestionStrip.setVisibility(View.GONE);
+                clipboardScroll.setVisibility(View.VISIBLE);
+            }
         });
 
         keyboardView.findViewById(R.id.btn_symbol).setOnClickListener(v -> {
@@ -334,6 +377,11 @@ public class MyKeyboardService extends InputMethodService {
     }
 
     private void updateKeyLabels() {
+        // ক্যাপস লক শুধু ইংরেজি মোডের জন্য — বাংলায় চলে গেলে সাথে সাথে অফ হয়ে যাবে
+        if (!isEnglishMode && isCapsLock) {
+            isCapsLock = false;
+            isShiftPressed = false;
+        }
         int[] buttonIds = {
                 R.id.btn_q, R.id.btn_w, R.id.btn_e, R.id.btn_r, R.id.btn_t, R.id.btn_y, R.id.btn_u, R.id.btn_i, R.id.btn_o, R.id.btn_p,
                 R.id.btn_a, R.id.btn_s, R.id.btn_d, R.id.btn_f, R.id.btn_g, R.id.btn_h, R.id.btn_j, R.id.btn_k, R.id.btn_l,
@@ -381,6 +429,11 @@ public class MyKeyboardService extends InputMethodService {
 
         Button langBtn = keyboardView.findViewById(R.id.btn_lang);
         if (langBtn != null) langBtn.setText(isEnglishMode ? "Eng" : "বাং");
+
+        View shiftBtn = keyboardView.findViewById(R.id.btn_shift);
+        if (shiftBtn != null) {
+            shiftBtn.setAlpha(isCapsLock ? 0.3f : (isShiftPressed ? 0.5f : 1.0f));
+        }
 
         if (btnCtrl != null) {
             if (isSymbolMode || isCtrlPressed || isEmojiMode) {
@@ -773,7 +826,7 @@ public class MyKeyboardService extends InputMethodService {
         if (isSymbolMode) {
             pendingVowel = "";  // discard
             ic.commitText(getSymbol(tag, isShiftPressed), 1);
-            if (isShiftPressed) { isShiftPressed = false; updateKeyLabels(); }
+            if (isShiftPressed && !isCapsLock) { isShiftPressed = false; updateKeyLabels(); }
             return;
         }
         if (isEnglishMode) {
@@ -782,7 +835,7 @@ public class MyKeyboardService extends InputMethodService {
             String result = Bijoymaper.getUnicode(tag, isShiftPressed);
             processBengaliLogic(result, ic);
         }
-        if (isShiftPressed) { isShiftPressed = false; updateKeyLabels(); }
+        if (isShiftPressed && !isCapsLock) { isShiftPressed = false; updateKeyLabels(); }
     }
 
     // ══════════════════════════════════════════════════════════════════
