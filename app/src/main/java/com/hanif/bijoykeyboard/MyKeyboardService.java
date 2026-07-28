@@ -337,25 +337,41 @@ public class MyKeyboardService extends InputMethodService {
         ArrayList<String> candidates = new ArrayList<>(scores.keySet());
         candidates.sort((a, b) -> scores.get(b) - scores.get(a));
 
+        // ঠিক ৩টা suggestion দেখাতে হবে — Gboard-স্টাইলে সমান তিন ঘরে (প্রতিটার width = 1/3 strip)
+        final int MAX_SUGGESTIONS = 3;
         int shown = 0;
         for (String word : candidates) {
-            if (shown >= 4) break;
+            if (shown >= MAX_SUGGESTIONS) break;
+            if (shown > 0) addSuggestionDivider(strip);
             addSuggestionChip(strip, word, prefix);
             shown++;
         }
     }
 
+    // দুটো suggestion ঘরের মাঝে একটা পাতলা ভার্টিকাল লাইন — যাতে ৩টা আলাদা "ঘর" এর মতো দেখায়
+    private void addSuggestionDivider(LinearLayout strip) {
+        View divider = new View(this);
+        LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(2, LinearLayout.LayoutParams.MATCH_PARENT);
+        int vMargin = (int) (10 * getResources().getDisplayMetrics().density);
+        dp.setMargins(0, vMargin, 0, vMargin);
+        divider.setLayoutParams(dp);
+        divider.setBackgroundColor(0x33FFFFFF);
+        strip.addView(divider);
+    }
+
     private void addSuggestionChip(LinearLayout strip, String word, String prefix) {
         TextView chip = new TextView(this);
         chip.setText(word);
-        chip.setTextSize(13);
-        chip.setTextColor(0xFFE5E7EB);
+        // আগে ছিল 13sp, ছোট মিল-থাকা তিনটা suggestion এখন বড় সাইজে (18sp) দেখাবে
+        chip.setTextSize(18);
+        chip.setTextColor(0xFFFFFFFF);
         chip.setGravity(android.view.Gravity.CENTER);
-        chip.setPadding(16, 4, 16, 4);
-        chip.setBackgroundResource(R.drawable.key_background);
+        chip.setMaxLines(1);
+        chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        chip.setPadding(12, 4, 12, 4);
+        // প্রতিটা suggestion strip-এর ঠিক ১/৩ অংশ দখল করবে — সমান তিনটা "ঘর"
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        p.setMargins(4, 4, 4, 4);
+                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         chip.setLayoutParams(p);
         chip.setOnClickListener(v -> {
             InputConnection ic = getCurrentInputConnection();
