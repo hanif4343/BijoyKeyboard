@@ -1232,7 +1232,6 @@ public class MyKeyboardService extends InputMethodService {
         }
         isG_Pressed = false;
     }
-
     // ══════════════════════════════════════
     // PHYSICAL / EXTERNAL KEYBOARD HANDLER
     // ══════════════════════════════════════
@@ -1240,19 +1239,29 @@ public class MyKeyboardService extends InputMethodService {
     public boolean onKeyDown(int keyCode, @NonNull KeyEvent event) {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return super.onKeyDown(keyCode, event);
-        if (event.isCtrlPressed()) return super.onKeyDown(keyCode, event);
 
-        // Alt কী নিজেই চাপা হলে — শুধু আসল (repeat নয়) down-এই টাইমস্ট্যাম্প রিসেট করো
-        if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
-            if (event.getRepeatCount() == 0) {
-                altKeyDown = true;
-                altDownAtMs = System.currentTimeMillis();
-            }
+        // ১. সিস্টেম নেভিগেশন ও ফর্ম ফিল্ড মুভমেন্ট কি (Tab ইভেন্ট স্বাভাবিক রাখা)
+        if (keyCode == KeyEvent.KEYCODE_TAB || 
+            keyCode == KeyEvent.KEYCODE_NAVIGATE_NEXT || 
+            keyCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
             return super.onKeyDown(keyCode, event);
         }
-        // সিস্টেম এখন সঠিকভাবে Alt রিলিজড রিপোর্ট করছে — তাই leftover ট্র্যাকিং সাথে সাথে ক্লিয়ার করো
-        if (!event.isAltPressed()) {
-            altKeyDown = false;
+
+        // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি)
+        if (event.isCtrlPressed() && event.isAltPressed() && keyCode == KeyEvent.KEYCODE_V) {
+            if (event.getRepeatCount() == 0) {
+                isEnglishMode = !isEnglishMode;
+                isEmojiMode = false;
+                resetStates();
+                updateKeyLabels();
+                Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+
+        // ৩. অন্যান্য Ctrl ভিত্তিক শর্টকাটগুলোকে সিস্টেমের হাতে ছেড়ে দেওয়া (Ctrl+C, Ctrl+V, Ctrl+A ইত্যাদি)
+        if (event.isCtrlPressed()) {
+            return super.onKeyDown(keyCode, event);
         }
 
         if (keyCode == KeyEvent.KEYCODE_DEL) {
@@ -1260,7 +1269,7 @@ public class MyKeyboardService extends InputMethodService {
             return super.onKeyDown(keyCode, event);
         }
 
-        // Space — হসন্ত visible রাখা (isG_Pressed)
+        // Space + G pressed logic (যুক্তবর্ণ/হসন্ত)
         if (keyCode == KeyEvent.KEYCODE_SPACE && isG_Pressed && !isEnglishMode) {
             ic.commitText("\u09CD", 1);
             ic.commitText(" ", 1);
@@ -1269,62 +1278,37 @@ public class MyKeyboardService extends InputMethodService {
             return true;
         }
 
-        // Alt+Space — ভাষা পরিবর্তন
-        // external কিবোর্ডে Alt/Space একসাথে একটু বেশি সময় চাপা থাকলে সিস্টেম
-        // key-repeat event পাঠায় (একই keyDown বারবার ফায়ার হয়)। repeatCount চেক
-        // না করলে প্রতিটা repeat event-এ mode আবার toggle হয়ে যায়। তাই শুধু আসল
-        // (repeat নয়) key press-এই toggle করা হচ্ছে।
-        //
-        // এছাড়া শুধু event.isAltPressed()-এর ওপর ভরসা না করে altKeyDown +
-        // ALT_COMBO_WINDOW_MS ব্যবহার করা হচ্ছে, যাতে stuck/leftover Alt meta
-        // state-এর কারণে সাধারণ Space চাপায় ভাষা এলোমেলোভাবে বদলে না যায়
-        // (দ্রষ্টব্য: altKeyDown ফিল্ডের ব্যাখ্যা ওপরে দেখুন)।
+        // সাধারণ Space Key প্রসেসিং
         if (keyCode == KeyEvent.KEYCODE_SPACE) {
-            boolean genuineAltCombo = event.isAltPressed() && altKeyDown
-                    && (System.currentTimeMillis() - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
-            if (genuineAltCombo) {
-                if (event.getRepeatCount() == 0) {
-                    isEnglishMode = !isEnglishMode; isEmojiMode = false;
-                    resetStates(); updateKeyLabels();
-                    altKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
-                }
-                return true;
-            } else if (event.isAltPressed()) {
-                // Alt-এর মেটা-ফ্ল্যাগ true থাকলেও সেটা আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী
-                // ইচ্ছাকৃত কম্বো নয় (leftover/stuck) — তাই ভাষা না বদলে সাধারণ
-                // স্পেস হিসেবেই কমিট হবে, নিচের সাধারণ Space ব্লকে পড়ে যাবে
-                altKeyDown = false;
-            }
-        }
-
-        // Space — pendingVowel discard করে নিজেই commit
-        if (keyCode == KeyEvent.KEYCODE_SPACE) {
-            pendingVowel = "";  // discard — ক+ি+space → "ক " হবে
+            pendingVowel = "";
             ic.commitText(" ", 1);
             isG_Pressed = false;
             return true;
         }
 
-        // Enter / Arrow — pending discard করে super-এ দাও
+        // নেভিগেশন ও এন্টার কি
         if (keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
             keyCode == KeyEvent.KEYCODE_DPAD_UP ||
             keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            pendingVowel = "";  // discard
+            pendingVowel = "";
             isG_Pressed = false;
             return super.onKeyDown(keyCode, event);
         }
 
         if (isEnglishMode) return super.onKeyDown(keyCode, event);
 
+        // বাংলা বিজয়ের কি-ম্যাপিং হ্যান্ডলার
         if (event.isPrintingKey() || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)) {
             String tag;
-            if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
+            if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
                 tag = String.valueOf(keyCode - KeyEvent.KEYCODE_0);
-            else { char c = (char) event.getUnicodeChar(); tag = String.valueOf(c).toLowerCase(); }
+            } else {
+                char c = (char) event.getUnicodeChar();
+                tag = String.valueOf(c).toLowerCase();
+            }
 
-            // External keyboard: Shift+9 → (, Shift+0 → ) — ৎ/ঃ নয়
             if (event.isShiftPressed() && keyCode == KeyEvent.KEYCODE_9) {
                 pendingVowel = ""; isG_Pressed = false;
                 ic.commitText("(", 1); return true;
@@ -1343,19 +1327,18 @@ public class MyKeyboardService extends InputMethodService {
                 return true;
             }
 
-            // Unmapped printable key (যেমন , . ! ? । ইত্যাদি)
-            // pendingVowel discard করো — ক+ি এর পরে , দিলে "কি," হবে না, শুধু "ক," হবে
             char actualChar = (char) event.getUnicodeChar(event.getMetaState());
-            if (actualChar > 0) {
-                pendingVowel = "";  // commit না করে বাদ
+            if (actualChar != 0) {
+                pendingVowel = "";
                 ic.commitText(String.valueOf(actualChar), 1);
                 isG_Pressed = false;
                 return true;
             }
-            isG_Pressed = false;
         }
+
         return super.onKeyDown(keyCode, event);
     }
+
 
     // ══════════════════════════════════════
     // VOICE INPUT
