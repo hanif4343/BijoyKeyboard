@@ -55,19 +55,22 @@ public class MyKeyboardService extends InputMethodService {
     private boolean isEmojiMode = false;
     private boolean isCtrlPressed = false;
 
-    // কিছু Bluetooth/এক্সটার্নাল কিবোর্ডে Alt কী ছাড়ার (keyUp) ইভেন্টটা মিস হয়ে যায়।
-    // তখন সিস্টেম event.isAltPressed() আসলে Alt ছেড়ে দেওয়ার পরেও অনেকক্ষণ true
-    // রিপোর্ট করতে থাকে ("স্টাক" মেটা-স্টেট)। এর ফলে এর পরে যেকোনো সাধারণ Space
-    // চাপলেই ভাষা এলোমেলোভাবে নিজে নিজে বদলে যায় — টাইপ করতে করতে বারবার ভাষা
-    // পরিবর্তন হওয়ার মূল কারণ এটাই। আবার একই কারণে, ইচ্ছাকৃতভাবে Alt+Space চাপলেও
-    // কখনো টগল না হওয়া/ভুল দিকে টগল হওয়ার মতো সমস্যা হয়।
-    // সমাধান: সিস্টেমের রিপোর্ট করা মেটা-স্টেটের ওপর সম্পূর্ণ ভরসা না করে, Alt কী
-    // real down/up নিজেরাই ট্র্যাক করা হচ্ছে, এবং Alt চাপার একটা নির্দিষ্ট সময়সীমার
-    // (ALT_COMBO_WINDOW_MS) মধ্যেই Space চাপলে সেটাকে ইচ্ছাকৃত কম্বো ধরা হয়।
+    // কিছু Bluetooth/এক্সটার্নাল কিবোর্ডে Ctrl/Alt কী ছাড়ার (keyUp) ইভেন্টটা মিস হয়ে যায়।
+    // তখন সিস্টেম event.isCtrlPressed()/event.isAltPressed() আসলে কী ছাড়ার পরেও
+    // অনেকক্ষণ true রিপোর্ট করতে থাকে ("স্টাক" মেটা-স্টেট)। এর ফলে পরে যখনই ইউজার
+    // সাধারণভাবে টাইপ করার সময় শুধু V অক্ষরটা চাপে, তখন কোডটা ভুলবশত মনে করে
+    // Ctrl+Alt+V শর্টকাট চাপা হয়েছে — আর ভাষা নিজে নিজে বদলে যায় (টাইপ করতে করতে
+    // বারবার ভাষা পরিবর্তন হওয়ার মূল কারণ এটাই)। আবার একই কারণে, ইচ্ছাকৃতভাবে
+    // Ctrl+Alt+V চাপলেও কখনো ঠিকভাবে টগল না হওয়ার মতো সমস্যাও হতে পারে।
+    // সমাধান: সিস্টেমের রিপোর্ট করা মেটা-স্টেটের ওপর সম্পূর্ণ ভরসা না করে, Ctrl ও Alt
+    // কী-এর real down/up নিজেরাই ট্র্যাক করা হচ্ছে, এবং দুটো কী চাপার একটা নির্দিষ্ট
+    // সময়সীমার (ALT_COMBO_WINDOW_MS) মধ্যেই V চাপলে সেটাকে ইচ্ছাকৃত কম্বো ধরা হয়।
     // এই সময়সীমা পার হয়ে যাওয়া কোনো leftover/stuck flag উপেক্ষা করা হয়, যাতে
-    // সাধারণ টাইপিংয়ে ভাষা নিজে নিজে না বদলায়।
+    // সাধারণ টাইপিংয়ে (শুধু "v" লিখলে) ভাষা নিজে নিজে না বদলায়।
     private boolean altKeyDown = false;
     private long altDownAtMs = 0L;
+    private boolean ctrlKeyDown = false;
+    private long ctrlDownAtMs = 0L;
     private static final long ALT_COMBO_WINDOW_MS = 1200;
 
     private Button btnCtrl;
@@ -119,6 +122,16 @@ public class MyKeyboardService extends InputMethodService {
         setupKeyboard();
         updateKeyLabels();
         return keyboardView;
+    }
+
+    // নতুন কোনো টেক্সট ফিল্ডে ফোকাস গেলে (ট্যাব চেপে বা ক্লিক করে) Android এই মেথডটা
+    // কল করে। এখানে ইচ্ছাকৃতভাবে isEnglishMode রিসেট করা হচ্ছে না — যাতে এক ফিল্ড
+    // থেকে অন্য ফিল্ডে গেলে ভাষা নিজে থেকে বাংলায় ফিরে না যায়। শুধু UI (কী লেবেল,
+    // ভাষা বাটনের টেক্সট) রিফ্রেশ রাখার জন্য এইটুকু রাখা হলো।
+    @Override
+    public void onStartInputView(EditorInfo info, boolean restarting) {
+        super.onStartInputView(info, restarting);
+        updateKeyLabels();
     }
 
     private void updateClipboardItems() {
@@ -1247,19 +1260,49 @@ public class MyKeyboardService extends InputMethodService {
             return super.onKeyDown(keyCode, event);
         }
 
+        // Ctrl/Alt কী নিজেই চাপা হলে — শুধু আসল (repeat নয়) down-এই টাইমস্ট্যাম্প রিসেট করো।
+        // এইটুকু নিজস্ব ট্র্যাকিং না রাখলে stuck/leftover meta state-এর কারণে সাধারণ
+        // "v" টাইপ করলেও ভাষা ভুলবশত বদলে যেতে পারে (নিচে বিস্তারিত দেখুন)।
+        if (keyCode == KeyEvent.KEYCODE_CTRL_LEFT || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+            if (event.getRepeatCount() == 0) { ctrlKeyDown = true; ctrlDownAtMs = System.currentTimeMillis(); }
+            return super.onKeyDown(keyCode, event);
+        }
+        if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+            if (event.getRepeatCount() == 0) { altKeyDown = true; altDownAtMs = System.currentTimeMillis(); }
+            return super.onKeyDown(keyCode, event);
+        }
+        // সিস্টেম এখন সঠিকভাবে Ctrl/Alt রিলিজড রিপোর্ট করছে — leftover ট্র্যাকিং সাথে সাথে ক্লিয়ার করো
+        if (!event.isCtrlPressed()) ctrlKeyDown = false;
+        if (!event.isAltPressed()) altKeyDown = false;
+
         // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি)
-        if (event.isCtrlPressed() && event.isAltPressed() && keyCode == KeyEvent.KEYCODE_V) {
-            if (event.getRepeatCount() == 0) {
-                isEnglishMode = !isEnglishMode;
-                isEmojiMode = false;
-                resetStates();
-                updateKeyLabels();
-                Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
+        // শুধু event.isCtrlPressed()/isAltPressed()-এর ওপর ভরসা না করে, Ctrl ও Alt
+        // দুটোই আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী সম্প্রতি (ALT_COMBO_WINDOW_MS-এর মধ্যে)
+        // সত্যিই চাপা হয়েছে কিনা সেটাও চেক করা হচ্ছে — নাহলে stuck meta flag-এর কারণে
+        // সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে (এটাই মূল বাগ ছিল)।
+        if (keyCode == KeyEvent.KEYCODE_V) {
+            long now = System.currentTimeMillis();
+            boolean genuineCombo = event.isCtrlPressed() && event.isAltPressed()
+                    && ctrlKeyDown && (now - ctrlDownAtMs) <= ALT_COMBO_WINDOW_MS
+                    && altKeyDown && (now - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
+            if (genuineCombo) {
+                if (event.getRepeatCount() == 0) {
+                    isEnglishMode = !isEnglishMode;
+                    isEmojiMode = false;
+                    resetStates();
+                    updateKeyLabels();
+                    ctrlKeyDown = false; altKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
+                    Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            } else if (event.isCtrlPressed() && event.isAltPressed()) {
+                // মেটা-ফ্ল্যাগ true থাকলেও আমাদের ট্র্যাকিং অনুযায়ী এটা ইচ্ছাকৃত কম্বো নয়
+                // (leftover/stuck) — তাই ভাষা না বদলে "v" স্বাভাবিকভাবেই টাইপ হবে
+                ctrlKeyDown = false; altKeyDown = false;
             }
-            return true;
         }
 
-        // ৩. অন্যান্য Ctrl ভিত্তিক শর্টকাটগুলোকে সিস্টেমের হাতে ছেড়ে দেওয়া (Ctrl+C, Ctrl+V, Ctrl+A ইত্যাদি)
+        // ৩. অন্যান্য Ctrl ভিত্তিক শর্টকাটগুলোকে সিস্টেমের হাতে ছেড়ে দেওয়া (Ctrl+C, Ctrl+V, Ctrl+A ইত্যাদি)
         if (event.isCtrlPressed()) {
             return super.onKeyDown(keyCode, event);
         }
@@ -1339,9 +1382,21 @@ public class MyKeyboardService extends InputMethodService {
         return super.onKeyDown(keyCode, event);
     }
 
+    // Ctrl/Alt কী ছাড়ার (release) সময় আমাদের নিজস্ব ট্র্যাকিং ফ্ল্যাগ সাথে সাথে ক্লিয়ার
+    // করে দেওয়া হচ্ছে, যাতে "স্টাক" অবস্থা যতটা সম্ভব কম সময় স্থায়ী হয়। V বা অন্য কোনো
+    // কী-এর keyUp ইভেন্ট এখানে ইচ্ছাকৃতভাবে consume করা হচ্ছে না — তাতে স্বাভাবিক
+    // টাইপিং/repeat আচরণ (এবং Ctrl+C/V-এর মতো সিস্টেম শর্টকাট) অক্ষত থাকবে।
+    @Override
+    public boolean onKeyUp(int keyCode, @NonNull KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_CTRL_LEFT || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+            ctrlKeyDown = false;
+        } else if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+            altKeyDown = false;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
 
-    // ══════════════════════════════════════
-    // VOICE INPUT
+
     // ══════════════════════════════════════
     private Handler waveHandler = new Handler();
     private Runnable waveRunnable;
