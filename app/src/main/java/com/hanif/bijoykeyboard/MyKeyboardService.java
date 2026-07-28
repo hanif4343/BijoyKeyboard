@@ -54,6 +54,22 @@ public class MyKeyboardService extends InputMethodService {
     private boolean isSymbolMode = false;
     private boolean isEmojiMode = false;
     private boolean isCtrlPressed = false;
+
+    // কিছু Bluetooth/এক্সটার্নাল কিবোর্ডে Alt কী ছাড়ার (keyUp) ইভেন্টটা মিস হয়ে যায়।
+    // তখন সিস্টেম event.isAltPressed() আসলে Alt ছেড়ে দেওয়ার পরেও অনেকক্ষণ true
+    // রিপোর্ট করতে থাকে ("স্টাক" মেটা-স্টেট)। এর ফলে এর পরে যেকোনো সাধারণ Space
+    // চাপলেই ভাষা এলোমেলোভাবে নিজে নিজে বদলে যায় — টাইপ করতে করতে বারবার ভাষা
+    // পরিবর্তন হওয়ার মূল কারণ এটাই। আবার একই কারণে, ইচ্ছাকৃতভাবে Alt+Space চাপলেও
+    // কখনো টগল না হওয়া/ভুল দিকে টগল হওয়ার মতো সমস্যা হয়।
+    // সমাধান: সিস্টেমের রিপোর্ট করা মেটা-স্টেটের ওপর সম্পূর্ণ ভরসা না করে, Alt কী
+    // real down/up নিজেরাই ট্র্যাক করা হচ্ছে, এবং Alt চাপার একটা নির্দিষ্ট সময়সীমার
+    // (ALT_COMBO_WINDOW_MS) মধ্যেই Space চাপলে সেটাকে ইচ্ছাকৃত কম্বো ধরা হয়।
+    // এই সময়সীমা পার হয়ে যাওয়া কোনো leftover/stuck flag উপেক্ষা করা হয়, যাতে
+    // সাধারণ টাইপিংয়ে ভাষা নিজে নিজে না বদলায়।
+    private boolean altKeyDown = false;
+    private long altDownAtMs = 0L;
+    private static final long ALT_COMBO_WINDOW_MS = 1200;
+
     private Button btnCtrl;
     private View keyboardView;
     private SpeechRecognizer speechRecognizer = null;
@@ -1226,6 +1242,19 @@ public class MyKeyboardService extends InputMethodService {
         if (ic == null) return super.onKeyDown(keyCode, event);
         if (event.isCtrlPressed()) return super.onKeyDown(keyCode, event);
 
+        // Alt কী নিজেই চাপা হলে — শুধু আসল (repeat নয়) down-এই টাইমস্ট্যাম্প রিসেট করো
+        if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+            if (event.getRepeatCount() == 0) {
+                altKeyDown = true;
+                altDownAtMs = System.currentTimeMillis();
+            }
+            return super.onKeyDown(keyCode, event);
+        }
+        // সিস্টেম এখন সঠিকভাবে Alt রিলিজড রিপোর্ট করছে — তাই leftover ট্র্যাকিং সাথে সাথে ক্লিয়ার করো
+        if (!event.isAltPressed()) {
+            altKeyDown = false;
+        }
+
         if (keyCode == KeyEvent.KEYCODE_DEL) {
             resetStates();
             return super.onKeyDown(keyCode, event);
@@ -1243,16 +1272,29 @@ public class MyKeyboardService extends InputMethodService {
         // Alt+Space — ভাষা পরিবর্তন
         // external কিবোর্ডে Alt/Space একসাথে একটু বেশি সময় চাপা থাকলে সিস্টেম
         // key-repeat event পাঠায় (একই keyDown বারবার ফায়ার হয়)। repeatCount চেক
-        // না করলে প্রতিটা repeat event-এ mode আবার toggle হয়ে যায় — ফলে ভাষা
-        // চেন্জ হয়ে আবার নিজে নিজে আগের অবস্থায় ফিরে যায় (অথবা মোটেও চেন্জ হয় না,
-        // কারণ জোড় সংখ্যক toggle-এ কোনো পরিবর্তন বোঝা যায় না)। তাই শুধু আসল
+        // না করলে প্রতিটা repeat event-এ mode আবার toggle হয়ে যায়। তাই শুধু আসল
         // (repeat নয়) key press-এই toggle করা হচ্ছে।
-        if (event.isAltPressed() && keyCode == KeyEvent.KEYCODE_SPACE) {
-            if (event.getRepeatCount() == 0) {
-                isEnglishMode = !isEnglishMode; isEmojiMode = false;
-                resetStates(); updateKeyLabels();
+        //
+        // এছাড়া শুধু event.isAltPressed()-এর ওপর ভরসা না করে altKeyDown +
+        // ALT_COMBO_WINDOW_MS ব্যবহার করা হচ্ছে, যাতে stuck/leftover Alt meta
+        // state-এর কারণে সাধারণ Space চাপায় ভাষা এলোমেলোভাবে বদলে না যায়
+        // (দ্রষ্টব্য: altKeyDown ফিল্ডের ব্যাখ্যা ওপরে দেখুন)।
+        if (keyCode == KeyEvent.KEYCODE_SPACE) {
+            boolean genuineAltCombo = event.isAltPressed() && altKeyDown
+                    && (System.currentTimeMillis() - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
+            if (genuineAltCombo) {
+                if (event.getRepeatCount() == 0) {
+                    isEnglishMode = !isEnglishMode; isEmojiMode = false;
+                    resetStates(); updateKeyLabels();
+                    altKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
+                }
+                return true;
+            } else if (event.isAltPressed()) {
+                // Alt-এর মেটা-ফ্ল্যাগ true থাকলেও সেটা আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী
+                // ইচ্ছাকৃত কম্বো নয় (leftover/stuck) — তাই ভাষা না বদলে সাধারণ
+                // স্পেস হিসেবেই কমিট হবে, নিচের সাধারণ Space ব্লকে পড়ে যাবে
+                altKeyDown = false;
             }
-            return true;
         }
 
         // Space — pendingVowel discard করে নিজেই commit
