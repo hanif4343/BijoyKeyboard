@@ -168,15 +168,36 @@ public class MyKeyboardService extends InputMethodService {
     // কল করে। এখানে ইচ্ছাকৃতভাবে isEnglishMode রিসেট করা হচ্ছে না — যাতে এক ফিল্ড
     // থেকে অন্য ফিল্ডে গেলে ভাষা নিজে থেকে বাংলায় ফিরে না যায়। শুধু UI (কী লেবেল,
     // ভাষা বাটনের টেক্সট) রিফ্রেশ রাখার জন্য এইটুকু রাখা হলো।
+    //
+    // বাগ ফিক্স: pendingVowel/isG_Pressed আগে কখনো রিসেট হতো না যখন কিবোর্ড নতুন
+    // ফিল্ডে/অ্যাপে চলে যেত (restarting == false)। ফলে আগের ফিল্ডে ি/ে/ৈ বা হসন্ত
+    // চাপার পর তার জোড়া ব্যঞ্জনটা যদি আর না আসত (ফিল্ড বদলানো, অ্যাপ সুইচ, টাচ করে
+    // কার্সর সরানো ইত্যাদি), সেই leftover pendingVowel পরের ফিল্ডে ঢুকে প্রথম
+    // keystroke-টা গিলে ফেলত/ভুল জায়গায় বসিয়ে দিত — এই কারণেই "ি কার প্রথমবার
+    // নিচ্ছে না, পরেরবার নিচ্ছে" সমস্যাটা হতো। নতুন ফিল্ডে ঢোকার সময় তাই leftover
+    // state discard করে (commit না করেই) ক্লিন স্টেটে শুরু করা হচ্ছে।
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        if (!restarting) {
+            resetStates(); // পুরনো ফিল্ডের leftover ি/ে/ৈ/হসন্ত discard করে ক্লিন স্টার্ট
+        }
         loadSettings();
         applyTheme();
         applyKeyboardHeightScale();
         detectPasswordField(info);
         updateEnterKeyForField(info);
         updateKeyLabels();
+    }
+
+    // কিবোর্ড ভিউ বন্ধ হওয়ার সময়ও (অন্য অ্যাপে চলে গেলে, কিবোর্ড লুকিয়ে ফেললে ইত্যাদি)
+    // pendingVowel/isG_Pressed ক্লিয়ার করে দেওয়া হচ্ছে — দুই দিক থেকেই (এখানে এবং
+    // onStartInputView-এ) গার্ড রাখলে leftover state কোনোভাবেই পরের সেশনে/ফিল্ডে
+    // ফাঁক গলে ঢুকতে পারবে না।
+    @Override
+    public void onFinishInputView(boolean finishingInput) {
+        super.onFinishInputView(finishingInput);
+        resetStates();
     }
 
     // পাসওয়ার্ড/পিন ফিল্ডে থাকলে suggestion strip আর adaptive learning সম্পূর্ণ বন্ধ —
