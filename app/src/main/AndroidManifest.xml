@@ -23,6 +23,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="কিবোর্ড সেটিংস" />
+
         <service
             android:name=".MyKeyboardService"
             android:permission="android.permission.BIND_INPUT_METHOD"
