@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0F172A">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- ── HEADER ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="24dp"
+            android:paddingBottom="20dp">
+
+            <TextView
+                android:id="@+id/btn_settings_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:text="←"
+                android:textColor="#F1F5F9"
+                android:textSize="20sp"
+                android:gravity="center"
+                android:background="@drawable/key_background"
+                android:clickable="true"
+                android:focusable="true"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="⚙️  কিবোর্ড সেটিংস"
+                android:textColor="#F1F5F9"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginEnd="40dp"/>
+        </LinearLayout>
+
+        <!-- ── থিম ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🎨  থিম"
+                android:textColor="#F1F5F9"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp"/>
+
+            <RadioGroup
+                android:id="@+id/theme_radio_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/theme_dark"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="ডার্ক (ডিফল্ট)"
+                    android:textColor="#F1F5F9"
+                    android:textSize="14sp"
+                    android:buttonTint="#3B82F6"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"/>
+
+                <RadioButton
+                    android:id="@+id/theme_light"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="লাইট"
+                    android:textColor="#F1F5F9"
+                    android:textSize="14sp"
+                    android:buttonTint="#3B82F6"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"/>
+
+                <RadioButton
+                    android:id="@+id/theme_midnight_blue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="মিডনাইট ব্লু"
+                    android:textColor="#F1F5F9"
+                    android:textSize="14sp"
+                    android:buttonTint="#3B82F6"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"/>
+
+                <RadioButton
+                    android:id="@+id/theme_forest_green"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="ফরেস্ট গ্রিন"
+                    android:textColor="#F1F5F9"
+                    android:textSize="14sp"
+                    android:buttonTint="#3B82F6"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"/>
+            </RadioGroup>
+        </LinearLayout>
+
+        <!-- ── কিবোর্ড হাইট ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="📏  কিবোর্ড হাইট"
+                    android:textColor="#F1F5F9"
+                    android:textSize="15sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/tv_height_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="100%"
+                    android:textColor="#60A5FA"
+                    android:textSize="14sp"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="কী-গুলো ছোট বা বড় করতে চাইলে টেনে সামঞ্জস্য করুন"
+                android:textColor="#64748B"
+                android:textSize="11sp"
+                android:layout_marginBottom="8dp"/>
+
+            <SeekBar
+                android:id="@+id/seek_height"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:progressTint="#3B82F6"
+                android:thumbTint="#3B82F6"/>
+        </LinearLayout>
+
+        <!-- ── কী সাউন্ড ও ভাইব্রেশন ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔊  সাউন্ড ও ভাইব্রেশন"
+                android:textColor="#F1F5F9"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="কী ক্লিক সাউন্ড"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"/>
+
+                <Switch
+                    android:id="@+id/switch_key_sound"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="#3B82F6"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="হ্যাপটিক ভাইব্রেশন"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"/>
+
+                <Switch
+                    android:id="@+id/switch_vibration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="#3B82F6"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp"
+                android:layout_marginTop="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="ভাইব্রেশনের তীব্রতা"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"/>
+
+                <TextView
+                    android:id="@+id/tv_vibration_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="60%"
+                    android:textColor="#60A5FA"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_vibration_strength"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:progressTint="#3B82F6"
+                android:thumbTint="#3B82F6"/>
+        </LinearLayout>
+
+        <!-- ── ডিকশনারি ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="📚  পার্সোনাল ডিকশনারি"
+                android:textColor="#F1F5F9"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp"/>
+
+            <TextView
+                android:id="@+id/tv_dict_count"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="0টা শব্দ শেখা আছে"
+                android:textColor="#64748B"
+                android:textSize="12sp"
+                android:layout_marginBottom="14dp"/>
+
+            <Button
+                android:id="@+id/btn_export_dict"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:text="এক্সপোর্ট (ব্যাকআপ ফাইলে সেভ করুন)"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                android:backgroundTint="#1D4ED8"
+                android:stateListAnimator="@null"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btn_import_dict"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:text="ইমপোর্ট (ব্যাকআপ ফাইল থেকে ফিরিয়ে আনুন)"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                android:backgroundTint="#0F766E"
+                android:stateListAnimator="@null"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btn_clear_dict"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:text="ডিকশনারি খালি করুন"
+                android:textColor="#FCA5A5"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                android:backgroundTint="#3F1D1D"
+                android:stateListAnimator="@null"/>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
