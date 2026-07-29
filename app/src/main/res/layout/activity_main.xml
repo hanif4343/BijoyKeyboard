@@ -262,6 +262,19 @@
                 android:lineSpacingExtra="4dp" />
         </LinearLayout>
 
+        <!-- ── SETTINGS BUTTON ── -->
+        <Button
+            android:id="@+id/btn_open_settings"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="⚙️  থিম, সাউন্ড ও ডিকশনারি সেটিংস"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="#374151"
+            android:stateListAnimator="@null"
+            android:layout_marginBottom="12dp"/>
+
         <!-- ── FEATURE GUIDE BUTTON ── -->
         <Button
             android:id="@+id/btn_guide"
