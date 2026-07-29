@@ -150,6 +150,13 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
+        // থিম/সাউন্ড/ভাইব্রেশন/ডিকশনারি সেটিংস
+        Button btnOpenSettings = findViewById(R.id.btn_open_settings);
+        if (btnOpenSettings != null) {
+            btnOpenSettings.setOnClickListener(v ->
+                startActivity(new Intent(this, SettingsActivity.class)));
+        }
+
         btnEnableKeyboard.setOnClickListener(v ->
             startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         );
