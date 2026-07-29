@@ -3,6 +3,7 @@ package com.hanif.bijoykeyboard;
 import android.inputmethodservice.InputMethodService;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
@@ -31,6 +32,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import android.text.InputType;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.media.AudioManager;
+import android.graphics.Color;
 
 public class MyKeyboardService extends InputMethodService {
 
@@ -73,6 +79,23 @@ public class MyKeyboardService extends InputMethodService {
     private long ctrlDownAtMs = 0L;
     private static final long ALT_COMBO_WINDOW_MS = 1200;
 
+    // পাসওয়ার্ড ফিল্ডে থাকলে suggestion/adaptive learning সম্পূর্ণ বন্ধ থাকবে (প্রাইভেসি)
+    private boolean isPasswordField = false;
+    // বর্তমান ফিল্ডের IME action (Done/Next/Search/Go/Send ইত্যাদি) — Enter কী-এর লেবেল/আচরণ এর ওপর নির্ভর করে
+    private int currentImeAction = EditorInfo.IME_ACTION_NONE;
+
+    // ══════════════════════════════════════
+    // SETTINGS (SharedPreferences "kb_settings")
+    // ══════════════════════════════════════
+    private static final String SETTINGS_PREFS = "kb_settings";
+    private SharedPreferences settingsPrefs;
+    private String themeName = "dark";
+    private int keyboardHeightPercent = 100; // ৭০–১৩০%
+    private boolean keySoundEnabled = false;
+    private boolean vibrationEnabled = true;
+    private int vibrationStrengthPercent = 60; // ০–১০০%
+    private AudioManager audioManager;
+
     private Button btnCtrl;
     private View keyboardView;
     private SpeechRecognizer speechRecognizer = null;
@@ -113,6 +136,20 @@ public class MyKeyboardService extends InputMethodService {
             clipboard.addPrimaryClipChangedListener(() -> updateClipboardItems());
         }
         loadAdaptiveWords();
+        settingsPrefs = getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE);
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        loadSettings();
+    }
+
+    // Settings অ্যাক্টিভিটি থেকে সেভ করা মান পড়ে আনা হচ্ছে। onStartInputView-এও আবার
+    // কল হয়, যাতে ইউজার মাঝে Settings-এ গিয়ে কিছু বদলালে সাথে সাথে প্রতিফলিত হয়।
+    private void loadSettings() {
+        if (settingsPrefs == null) return;
+        themeName = settingsPrefs.getString("theme", "dark");
+        keyboardHeightPercent = settingsPrefs.getInt("height_percent", 100);
+        keySoundEnabled = settingsPrefs.getBoolean("key_sound", false);
+        vibrationEnabled = settingsPrefs.getBoolean("vibration_enabled", true);
+        vibrationStrengthPercent = settingsPrefs.getInt("vibration_strength", 60);
     }
 
     @Override
@@ -121,6 +158,9 @@ public class MyKeyboardService extends InputMethodService {
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         setupKeyboard();
         updateKeyLabels();
+        loadSettings();
+        applyTheme();
+        applyKeyboardHeightScale();
         return keyboardView;
     }
 
@@ -131,7 +171,169 @@ public class MyKeyboardService extends InputMethodService {
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        loadSettings();
+        applyTheme();
+        applyKeyboardHeightScale();
+        detectPasswordField(info);
+        updateEnterKeyForField(info);
         updateKeyLabels();
+    }
+
+    // পাসওয়ার্ড/পিন ফিল্ডে থাকলে suggestion strip আর adaptive learning সম্পূর্ণ বন্ধ —
+    // নাহলে টাইপ করা পাসওয়ার্ড suggestion বা dictionary-তে জমা হয়ে প্রাইভেসি ঝুঁকি তৈরি করতে পারে
+    private void detectPasswordField(EditorInfo info) {
+        if (info == null) { isPasswordField = false; return; }
+        int classType = info.inputType & InputType.TYPE_MASK_CLASS;
+        int variation = info.inputType & InputType.TYPE_MASK_VARIATION;
+        boolean textPassword = classType == InputType.TYPE_CLASS_TEXT && (
+                variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD);
+        boolean numberPassword = classType == InputType.TYPE_CLASS_NUMBER &&
+                variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        isPasswordField = textPassword || numberPassword;
+        if (isPasswordField && keyboardView != null) {
+            LinearLayout strip = keyboardView.findViewById(R.id.suggestion_strip);
+            if (strip != null) strip.removeAllViews();
+        }
+    }
+
+    // ফিল্ড অনুযায়ী Enter কী-এর লেবেল (Done/Next/Search/Go/Send) ঠিক করা হচ্ছে,
+    // যেভাবে Gboard/SwiftKey করে। মাল্টিলাইন ফিল্ড বা IME_FLAG_NO_ENTER_ACTION থাকলে
+    // সাধারণ নিউলাইন আইকনই দেখানো হবে।
+    private void updateEnterKeyForField(EditorInfo info) {
+        currentImeAction = EditorInfo.IME_ACTION_NONE;
+        String label = "\u23CE"; // ⏎ ডিফল্ট নিউলাইন আইকন
+        boolean isWord = false;
+
+        if (info != null) {
+            boolean noEnterAction = (info.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
+            int action = info.imeOptions & EditorInfo.IME_MASK_ACTION;
+            if (!noEnterAction) {
+                switch (action) {
+                    case EditorInfo.IME_ACTION_DONE:
+                        currentImeAction = action; label = "Done"; isWord = true; break;
+                    case EditorInfo.IME_ACTION_GO:
+                        currentImeAction = action; label = "Go"; isWord = true; break;
+                    case EditorInfo.IME_ACTION_SEARCH:
+                        currentImeAction = action; label = "Search"; isWord = true; break;
+                    case EditorInfo.IME_ACTION_SEND:
+                        currentImeAction = action; label = "Send"; isWord = true; break;
+                    case EditorInfo.IME_ACTION_NEXT:
+                        currentImeAction = action; label = "Next"; isWord = true; break;
+                    case EditorInfo.IME_ACTION_PREVIOUS:
+                        currentImeAction = action; label = "Prev"; isWord = true; break;
+                    default:
+                        currentImeAction = EditorInfo.IME_ACTION_NONE; label = "\u23CE";
+                }
+            }
+        }
+
+        if (keyboardView != null) {
+            Button btnEnter = keyboardView.findViewById(R.id.btn_enter);
+            if (btnEnter != null) {
+                btnEnter.setText(label);
+                btnEnter.setTextSize(isWord ? 13 : 22);
+            }
+        }
+    }
+
+
+
+    // ══════════════════════════════════════
+    // THEME
+    // ══════════════════════════════════════
+    // suggestion chip তৈরির সময় (addSuggestionChip/addSuggestionDivider) এই রঙগুলোই ব্যবহার হয়,
+    // যাতে থিম বদলালে suggestion strip-ও সাথে সাথে মানানসই দেখায়
+    private int themeKeyText = 0xFFFFFFFF;
+    private int themeAccentBg = 0xFF374151;
+
+    // সংশ্লিষ্ট বাটনগুলো (Shift/Del/Symbol/Lang/Ctrl/Enter) কে সাধারণ কী থেকে একটু ভিন্ন
+    // (accent) রঙে দেখানো হয় — যেভাবে সব কিবোর্ডেই স্পেশাল কী গুলো আলাদা করে বোঝানো হয়
+    private java.util.Set<Integer> accentKeyIds() {
+        java.util.HashSet<Integer> ids = new java.util.HashSet<>();
+        ids.add(R.id.btn_shift); ids.add(R.id.btn_del); ids.add(R.id.btn_symbol);
+        ids.add(R.id.btn_lang); ids.add(R.id.btn_ctrl); ids.add(R.id.btn_enter);
+        return ids;
+    }
+
+    private void applyTheme() {
+        if (keyboardView == null) return;
+        int panelBg, topBarBg, keyBg, keyText, accentBg, accentText;
+        switch (themeName) {
+            case "light":
+                panelBg = 0xFFE5E7EB; topBarBg = 0xFFD1D5DB; keyBg = 0xFFFFFFFF;
+                keyText = 0xFF111827; accentBg = 0xFFC7CED6; accentText = 0xFF111827;
+                break;
+            case "midnight_blue":
+                panelBg = 0xFF0B1220; topBarBg = 0xFF0F1B2E; keyBg = 0xFF152238;
+                keyText = 0xFFE2E8F0; accentBg = 0xFF1E3A5F; accentText = 0xFFFFFFFF;
+                break;
+            case "forest_green":
+                panelBg = 0xFF0F1F16; topBarBg = 0xFF12291B; keyBg = 0xFF1B3A26;
+                keyText = 0xFFE7F5EC; accentBg = 0xFF2F5D3F; accentText = 0xFFFFFFFF;
+                break;
+            default: // "dark" — বর্তমান ডিফল্ট ডিজাইন
+                panelBg = 0xFF111827; topBarBg = 0xFF1A1A1A; keyBg = 0xFF1F2937;
+                keyText = 0xFFFFFFFF; accentBg = 0xFF374151; accentText = 0xFFFFFFFF;
+        }
+        themeKeyText = keyText;
+        themeAccentBg = accentBg;
+
+        keyboardView.setBackgroundColor(panelBg);
+        View topBar = keyboardView.findViewById(R.id.top_bar_container);
+        if (topBar != null) topBar.setBackgroundColor(topBarBg);
+
+        java.util.Set<Integer> accentIds = accentKeyIds();
+        applyThemeToViewTree(keyboardView, keyBg, keyText, accentBg, accentText, accentIds);
+    }
+
+    // leaf-level "কী" ভিউগুলোতে (Button/আইকন TextView) রিকার্সিভলি থিম প্রয়োগ করা হচ্ছে।
+    // container (LinearLayout/FrameLayout ইত্যাদি) আর ImageView (mic আইকন) স্বেচ্ছায় বাদ —
+    // যাতে transparent/স্তরভিত্তিক ব্যাকগ্রাউন্ড নষ্ট না হয়
+    private void applyThemeToViewTree(View v, int keyBg, int keyText, int accentBg, int accentText, java.util.Set<Integer> accentIds) {
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                applyThemeToViewTree(vg.getChildAt(i), keyBg, keyText, accentBg, accentText, accentIds);
+            }
+            return;
+        }
+        if (v instanceof ImageView) return; // মাইক আইকনের মতো transparent-bg ভিউ বাদ
+        if (v.getId() == View.NO_ID || v.getBackground() == null) return;
+
+        boolean accent = accentIds.contains(v.getId());
+        int bg = accent ? accentBg : keyBg;
+        int text = accent ? accentText : keyText;
+        v.setBackgroundTintList(ColorStateList.valueOf(bg));
+        if (v instanceof TextView) ((TextView) v).setTextColor(text);
+    }
+
+    // ══════════════════════════════════════
+    // KEYBOARD HEIGHT
+    // ══════════════════════════════════════
+    // MyKeyStyle-এ বেস height 55dp ধরে, keyboardHeightPercent (৭০–১৩০%) অনুযায়ী স্কেল করা হয়।
+    // সবসময় ফিক্সড বেস (৫৫dp) থেকে হিসাব করা হয় — বারবার apply করলেও height compound হয়ে
+    // বেড়ে/কমে যাবে না
+    private void applyKeyboardHeightScale() {
+        if (keyboardView == null) return;
+        float scale = keyboardHeightPercent / 100f;
+        applyHeightToViewTree(keyboardView, scale);
+    }
+
+    private void applyHeightToViewTree(View v, float scale) {
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) applyHeightToViewTree(vg.getChildAt(i), scale);
+        }
+        if (v instanceof Button) {
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp != null) {
+                int baseDp = 55; // মূল XML স্টাইলে (MyKeyStyle) ডিফাইন করা বেস height
+                lp.height = Math.round(baseDp * scale * getResources().getDisplayMetrics().density);
+                v.setLayoutParams(lp);
+            }
+        }
     }
 
     private void updateClipboardItems() {
@@ -274,6 +476,7 @@ public class MyKeyboardService extends InputMethodService {
     // স্পেস/এন্টার/দাঁড়ি/কমার আগে যে শব্দটা লেখা শেষ হলো, সেটা শেখানো হচ্ছে —
     // পরের বার একই শব্দ লিখতে গেলে এটা দ্রুত suggestion-এ উপরে চলে আসবে
     private void learnWord(String word) {
+        if (isPasswordField) return; // পাসওয়ার্ড ফিল্ডে কখনোই কিছু শেখানো/সেভ করা হবে না
         if (word == null) return;
         word = word.trim();
         if (word.length() < 2) return; // একটা মাত্র অক্ষর শেখানোর দরকার নেই
@@ -317,6 +520,7 @@ public class MyKeyboardService extends InputMethodService {
         LinearLayout strip = keyboardView.findViewById(R.id.suggestion_strip);
         if (strip == null) return;
         strip.removeAllViews();
+        if (isPasswordField) return; // পাসওয়ার্ড ফিল্ডে কোনো suggestion দেখানো হবে না
 
         final String prefix = getCurrentWordBeingTyped();
         if (prefix.isEmpty()) return;
@@ -355,7 +559,7 @@ public class MyKeyboardService extends InputMethodService {
         int vMargin = (int) (10 * getResources().getDisplayMetrics().density);
         dp.setMargins(0, vMargin, 0, vMargin);
         divider.setLayoutParams(dp);
-        divider.setBackgroundColor(0x33FFFFFF);
+        divider.setBackgroundColor((themeKeyText & 0x00FFFFFF) | 0x33000000);
         strip.addView(divider);
     }
 
@@ -364,7 +568,7 @@ public class MyKeyboardService extends InputMethodService {
         chip.setText(word);
         // আগে ছিল 13sp, ছোট মিল-থাকা তিনটা suggestion এখন বড় সাইজে (18sp) দেখাবে
         chip.setTextSize(18);
-        chip.setTextColor(0xFFFFFFFF);
+        chip.setTextColor(themeKeyText);
         chip.setGravity(android.view.Gravity.CENTER);
         chip.setMaxLines(1);
         chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -489,6 +693,18 @@ public class MyKeyboardService extends InputMethodService {
             resetStates();
         });
 
+        // সেটিংস গিয়ার আইকন — ট্যাপ করলে থিম/হাইট/সাউন্ড/ভাইব্রেশন/ডিকশনারি ম্যানেজ করার
+        // স্ক্রিন খুলবে। IME service থেকে Activity চালু করতে হলে NEW_TASK flag লাগে।
+        View btnSettingsGear = keyboardView.findViewById(R.id.btn_settings_gear);
+        if (btnSettingsGear != null) {
+            btnSettingsGear.setOnClickListener(v -> {
+                doHaptic();
+                Intent intent = new Intent(this, SettingsActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            });
+        }
+
         // ক্লিপবোর্ড টগল আইকন — ট্যাপ করলে ক্লিপবোর্ড স্ট্রিপ দেখাবে/লুকাবে।
         // কপি করা জিনিসপত্র সবসময় দেখা যাবে না, শুধু এই আইকনে ট্যাপ করলেই দেখা যাবে।
         keyboardView.findViewById(R.id.btn_clipboard_toggle).setOnClickListener(v -> {
@@ -568,7 +784,13 @@ public class MyKeyboardService extends InputMethodService {
             if (ic != null) {
                 learnCurrentWord();
                 pendingVowel = "";  // discard
-                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                if (currentImeAction != EditorInfo.IME_ACTION_NONE) {
+                    // ফিল্ড নির্দিষ্ট action চাইলে (Done/Next/Search/Go/Send) সেটাই ট্রিগার করা হবে,
+                    // শুধু raw নিউলাইন পাঠানো হবে না — অ্যাপগুলো তখন ফর্ম সাবমিট/সার্চ ঠিকভাবে বুঝবে
+                    ic.performEditorAction(currentImeAction);
+                } else {
+                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                }
                 updateSuggestionStrip();
             }
             isG_Pressed = false;
@@ -1097,9 +1319,16 @@ public class MyKeyboardService extends InputMethodService {
     }
 
     private void doHaptic() {
+        // key sound চালু থাকলে ক্লিক সাউন্ড বাজবে
+        if (keySoundEnabled && audioManager != null) {
+            audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 1.0f);
+        }
+        if (!vibrationEnabled) return;
         if (vibrator == null || !vibrator.hasVibrator()) return;
+        // vibrationStrengthPercent (0–100) থেকে amplitude (1–255) বের করা হচ্ছে
+        int amplitude = Math.max(1, Math.round(vibrationStrengthPercent * 255f / 100f));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE));
+            vibrator.vibrate(VibrationEffect.createOneShot(18, amplitude));
         } else {
             vibrator.vibrate(18);
         }
