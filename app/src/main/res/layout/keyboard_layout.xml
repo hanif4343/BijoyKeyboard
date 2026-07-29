@@ -7,6 +7,7 @@
     android:padding="1dp">
 
     <LinearLayout
+        android:id="@+id/top_bar_container"
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:orientation="horizontal"
@@ -22,6 +23,19 @@
             android:textSize="8sp"
             android:maxLines="1"
             android:layout_marginEnd="4dp"/>
+
+        <!-- সেটিংস আইকন: ট্যাপ করলে থিম/হাইট/সাউন্ড/ভাইব্রেশন/ডিকশনারি সেটিংস স্ক্রিন খুলবে -->
+        <TextView
+            android:id="@+id/btn_settings_gear"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:text="⚙️"
+            android:textSize="15sp"
+            android:gravity="center"
+            android:background="@drawable/key_background"
+            android:layout_marginEnd="4dp"
+            android:clickable="true"
+            android:focusable="true"/>
 
         <!-- ক্লিপবোর্ড টগল আইকন: ট্যাপ করলে নিচের ক্লিপবোর্ড স্ট্রিপ দেখাবে/লুকাবে -->
         <TextView
