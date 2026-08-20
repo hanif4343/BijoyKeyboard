@@ -98,6 +98,17 @@ public class MyKeyboardService extends InputMethodService {
     private long ctrlDownAtMs = 0L;
     private static final long ALT_COMBO_WINDOW_MS = 1200;
 
+    // Ctrl+Alt+V একসাথে তিনটে কী ঠিকমতো সিঙ্ক্রোনাইজ হওয়ার ওপর নির্ভর করে — কিছু
+    // ব্লুটুথ/এক্সটার্নাল কিবোর্ডে (যেখানে key-up ইভেন্ট প্রায়ই মিস হয়) এটা এখনও
+    // অনির্ভরযোগ্য থেকে যেতে পারে। তাই আরেকটা, অনেক বেশি স্থিতিশীল বিকল্প রাখা হলো:
+    // শুধু একটামাত্র কী — ডান/বাম Alt-এ পরপর দুইবার (৪০০ms-এর মধ্যে) চাপলেই ভাষা
+    // বদলে যাবে। এখানে সিঙ্ক্রোনাইজেশনের কোনো ঝামেলা নেই (একটাই কী ট্র্যাক করতে হয়),
+    // তাই এটা কাজ করবে এমনকি যেসব কিবোর্ডে Ctrl+Alt+V ধারাবাহিকভাবে ব্যর্থ হয় সেখানেও।
+    // Ctrl চাপা থাকা অবস্থায় (অর্থাৎ Ctrl+Alt+V কম্বোর অংশ হিসেবে Alt চাপা হলে) এই
+    // ডাবল-ট্যাপ ট্রিগার সক্রিয় হয় না, যাতে দুটো শর্টকাট একে অপরের সাথে গুলিয়ে না যায়।
+    private long lastHwAltTapTime = 0L;
+    private static final long HW_LANG_DOUBLE_TAP_MS = 400;
+
     // পাসওয়ার্ড ফিল্ডে থাকলে suggestion/adaptive learning সম্পূর্ণ বন্ধ থাকবে (প্রাইভেসি)
     private boolean isPasswordField = false;
     // বর্তমান ফিল্ডের IME action (Done/Next/Search/Go/Send ইত্যাদি) — Enter কী-এর লেবেল/আচরণ এর ওপর নির্ভর করে
@@ -397,6 +408,15 @@ public class MyKeyboardService extends InputMethodService {
     }
 
     private void showClipboardInUI() {
+        // এক্সটার্নাল/হার্ডওয়্যার কিবোর্ড লাগানো থাকলে অনেক সময় আমাদের ইনপুট ভিউ
+        // (keyboardView) কখনোই তৈরি হয় না (onCreateInputView কল হয় না) — কারণ
+        // Android তখন ধরে নেয় সফট কিবোর্ড দেখানোর দরকার নেই। এই মেথডটা ক্লিপবোর্ড
+        // বদলানোর PrimaryClipChangedListener থেকেও কল হয় (onCreate-এ রেজিস্টার করা,
+        // যেটা আমাদের ভিউ তৈরি আছে কিনা তার সাথে সম্পূর্ণ স্বাধীন)। আগে এখানে
+        // keyboardView-এর null-check না থাকায় এমন পরিস্থিতিতে NullPointerException
+        // হয়ে পুরো কিবোর্ড সার্ভিসটাই ক্র্যাশ/রিস্টার্ট হয়ে যেত — বাইরে থেকে দেখতে
+        // মনে হতো ভাষা "নিজে থেকে" বদলে যাচ্ছে বা আটকে যাচ্ছে।
+        if (keyboardView == null) return;
         LinearLayout container = keyboardView.findViewById(R.id.clipboard_container);
         if (container == null) return;
         container.removeAllViews();
@@ -818,11 +838,7 @@ public class MyKeyboardService extends InputMethodService {
         });
 
         keyboardView.findViewById(R.id.btn_lang).setOnClickListener(v -> {
-            isEnglishMode = !isEnglishMode;
-            isSymbolMode = false;
-            isEmojiMode = false;
-            updateKeyLabels();
-            resetStates();
+            toggleLanguageMode();
         });
 
         // সেটিংস গিয়ার আইকন — ট্যাপ করলে থিম/হাইট/সাউন্ড/ভাইব্রেশন/ডিকশনারি ম্যানেজ করার
@@ -958,6 +974,26 @@ public class MyKeyboardService extends InputMethodService {
     }
 
     private void updateKeyLabels() {
+        // *** মূল বাগ ফিক্স ***
+        // এক্সটার্নাল/USB (OTG) কিবোর্ড লাগানো থাকলে Android অনেক সময় আমাদের ইনপুট ভিউ
+        // (keyboardView) তৈরিই করে না (onCreateInputView কল হয় না) — যেহেতু সফট কিবোর্ড
+        // দেখানোর দরকার নেই বলে সিস্টেম ধরে নেয়। কিন্তু ভাষা টগল হলে (toggleLanguageMode)
+        // এই মেথডটা কল হয়, আর আগে এখানে keyboardView-এর কোনো null-check ছিল না —
+        // ফলে keyboardView.findViewById(...) এ সরাসরি NullPointerException হয়ে
+        // পুরো কিবোর্ড সার্ভিসটাই ক্র্যাশ করে যেত।
+        //
+        // এটাই "কিছুই না চাপলেও ভাষা এমনি এমনি বদলে যাওয়া / একবার বদলানোর পর থেকে
+        // আর ঠিকভাবে কাজ না করা" সমস্যার আসল কারণ ছিল: প্রথমবার ভাষা বদলানোর
+        // চেষ্টা করলেই (Ctrl+Alt+V ইত্যাদি) এখানে ক্র্যাশ হতো, সার্ভিসটা সিস্টেম দিয়ে
+        // মেরে/রিস্টার্ট করানো হতো — আর তখন isEnglishMode-সহ সব স্টেট রিসেট হয়ে
+        // ডিফল্টে (বাংলা) ফিরে যেত, অথবা আংশিকভাবে টগল হয়ে অসামঞ্জস্যপূর্ণ অবস্থায়
+        // আটকে থাকত। এখন keyboardView null হলে UI আপডেট বাদ দিয়ে চুপচাপ রিটার্ন করা
+        // হচ্ছে — isEnglishMode ঠিকভাবেই বদলে থাকে (toggleLanguageMode-এ, এই কলের
+        // আগেই), শুধু লেবেল আপডেট স্থগিত থাকে যতক্ষণ না ভিউ সত্যিই তৈরি হয় — আর
+        // onCreateInputView() নিজেই শেষে আরেকবার updateKeyLabels() কল করে, তাই ভিউ
+        // তৈরি হওয়ার সাথে সাথে লেবেল ঠিকঠাক আপডেট হয়ে যাবে, কোনো ক্র্যাশ ছাড়াই।
+        if (keyboardView == null) return;
+
         // ক্যাপস লক শুধু ইংরেজি মোডের জন্য — বাংলায় চলে গেলে সাথে সাথে অফ হয়ে যাবে
         if (!isEnglishMode && isCapsLock) {
             isCapsLock = false;
@@ -1646,7 +1682,23 @@ public class MyKeyboardService extends InputMethodService {
             return super.onKeyDown(keyCode, event);
         }
         if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
-            if (event.getRepeatCount() == 0) { altKeyDown = true; altDownAtMs = System.currentTimeMillis(); }
+            if (event.getRepeatCount() == 0) {
+                long now = System.currentTimeMillis();
+                // Ctrl চাপা না থাকলেই শুধু ডাবল-ট্যাপ ট্রিগার সক্রিয় — নাহলে Ctrl+Alt+V
+                // কম্বোর প্রথম Alt-চাপাটাও ভুলবশত ভাষা টগল করে ফেলতে পারত
+                if (!ctrlKeyDown) {
+                    boolean doubleTap = (now - lastHwAltTapTime) < HW_LANG_DOUBLE_TAP_MS;
+                    if (doubleTap) {
+                        toggleLanguageMode();
+                        lastHwAltTapTime = 0; // তিন/চারবার পরপর ট্যাপ করলে যেন বারবার টগল না হয়
+                        Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
+                        altKeyDown = true; altDownAtMs = now;
+                        return true;
+                    }
+                    lastHwAltTapTime = now;
+                }
+                altKeyDown = true; altDownAtMs = now;
+            }
             return super.onKeyDown(keyCode, event);
         }
         // Windows/মেটা কী নিজেই চাপা হলে — Ctrl/Alt-এর মতোই শুধু আসল down-এ ট্র্যাক করা হচ্ছে,
@@ -1698,10 +1750,7 @@ public class MyKeyboardService extends InputMethodService {
                     && metaKeyDown && (now - metaDownAtMs) <= ALT_COMBO_WINDOW_MS;
             if (genuineCombo) {
                 if (event.getRepeatCount() == 0) {
-                    isEnglishMode = !isEnglishMode;
-                    isEmojiMode = false;
-                    resetStates();
-                    updateKeyLabels();
+                    toggleLanguageMode();
                     ctrlKeyDown = false; altKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
                     Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
                 }
@@ -1949,6 +1998,17 @@ public class MyKeyboardService extends InputMethodService {
     private void resetStates() {
         pendingVowel = "";  // discard — commit না করে বাদ
         isG_Pressed = false;
+    }
+
+    // ভাষা টগল করার একমাত্র কেন্দ্রীয় জায়গা — টাচ (btn_lang), Ctrl+Alt+V, এবং
+    // হার্ডওয়্যার ডাবল-ট্যাপ (Alt Alt) তিনটাই এখন এই একই মেথড কল করে, যাতে ভবিষ্যতে
+    // কোথাও একটা পথ ঠিক করলে অন্যগুলো বাদ পড়ে না যায়
+    private void toggleLanguageMode() {
+        isEnglishMode = !isEnglishMode;
+        isSymbolMode = false;
+        isEmojiMode = false;
+        resetStates();
+        updateKeyLabels();
     }
 
     private boolean isBengaliKar(String s) {
