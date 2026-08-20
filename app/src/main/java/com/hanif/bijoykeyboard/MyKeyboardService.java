@@ -42,6 +42,25 @@ public class MyKeyboardService extends InputMethodService {
 
     private String pendingVowel = "";
     private ArrayList<String> clipboardHistory = new ArrayList<>();
+
+    // ══════════════════════════════════════
+    // হার্ডওয়্যার (ব্লুটুথ/USB) কিবোর্ড দিয়ে Win+V ক্লিপবোর্ড নেভিগেশন
+    // ══════════════════════════════════════
+    // এক্সটার্নাল কিবোর্ড লাগানো থাকলে সাধারণত অন-স্ক্রিন কিবোর্ড ভিউ (আর তার
+    // ভেতরের ক্লিপবোর্ড স্ট্রিপ) নিজে থেকে ভেসে ওঠে না — Android ধরে নেয় ইউজারের
+    // আলাদা করে সফট কিবোর্ড দরকার নেই। কিন্তু Windows+V চাপলে ক্লিপবোর্ড হিস্টোরি
+    // দেখানোর জন্য আমাদের ভিউটাই দরকার, তাই সেই মুহূর্তে requestShowSelf(SHOW_FORCED)
+    // দিয়ে জোর করে ভিউ দেখানো হয় (openClipboardPanelViaHardware দ্রষ্টব্য) — বাকি
+    // সময় স্বাভাবিক আচরণ (হাইড থাকা) অক্ষত থাকে।
+    // মাউস নেই ধরে নিয়ে (হার্ডওয়্যার কিবোর্ড সাধারণত টাচ-লেস প্রেক্ষাপটে ব্যবহৃত হয়),
+    // প্যানেল খোলা থাকা অবস্থায় ডানে/বাঁয়ে (বা ওপরে/নিচে) অ্যারো দিয়ে চিপগুলোর মধ্যে
+    // ফোকাস সরানো যায় আর Enter দিয়ে সিলেক্ট/পেস্ট করা যায় — নিচে moveClipboardFocus,
+    // activateFocusedClipboardChip, closeClipboardPanel দ্রষ্টব্য।
+    private boolean metaKeyDown = false;
+    private long metaDownAtMs = 0L;
+    private List<Button> clipboardChipButtons = new ArrayList<>();
+    private int clipboardFocusIndex = -1;
+    private boolean clipboardHardwareNavActive = false;
     private boolean isG_Pressed = false;
     private boolean isEnglishMode = false;
     private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
@@ -381,6 +400,7 @@ public class MyKeyboardService extends InputMethodService {
         LinearLayout container = keyboardView.findViewById(R.id.clipboard_container);
         if (container == null) return;
         container.removeAllViews();
+        clipboardChipButtons.clear(); // পুরনো তালিকা রিফ্রেশ করার সময় হার্ডওয়্যার-নেভিগেশনের রেফারেন্সও নতুন করে বানাতে হবে
 
         ArrayList<String> pinnedItems = getPinnedItems();
         ArrayList<String> allItems = new ArrayList<>();
@@ -406,18 +426,17 @@ public class MyKeyboardService extends InputMethodService {
                     LinearLayout.LayoutParams.MATCH_PARENT);
             params.setMargins(5, 5, 5, 5);
             btn.setLayoutParams(params);
+            // হার্ডওয়্যার কিবোর্ডে DPAD দিয়ে ফোকাস সরানো আর ট্যাপ — দুটোই যেন কাজ করে,
+            // তাই ফোকাসেবল রাখা হচ্ছে (মাউস না থাকলেও ভিউ ফোকাস পেতে পারবে)
+            btn.setFocusable(true);
+            btn.setFocusableInTouchMode(true);
 
             btn.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null) ic.commitText(text, 1);
                 doHaptic();
                 // পেস্ট করার পর ক্লিপবোর্ড স্ট্রিপ বন্ধ করে suggestion স্পেস দেখানো হচ্ছে
-                View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
-                View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
-                if (clipboardScroll != null && suggestionStrip != null) {
-                    clipboardScroll.setVisibility(View.GONE);
-                    suggestionStrip.setVisibility(View.VISIBLE);
-                }
+                closeClipboardPanel();
             });
 
             btn.setOnLongClickListener(v -> {
@@ -433,7 +452,99 @@ public class MyKeyboardService extends InputMethodService {
             });
 
             container.addView(btn);
+            clipboardChipButtons.add(btn);
         }
+
+        // হার্ডওয়্যার-নেভিগেশন চলাকালীন লিস্ট রিফ্রেশ হলে (যেমন নতুন কপি আসায়)
+        // আগের ফোকাস ইনডেক্স নতুন তালিকার সীমার মধ্যে ক্ল্যাম্প করে আবার হাইলাইট করা হচ্ছে
+        if (clipboardHardwareNavActive) {
+            if (clipboardChipButtons.isEmpty()) {
+                clipboardFocusIndex = -1;
+            } else if (clipboardFocusIndex < 0 || clipboardFocusIndex >= clipboardChipButtons.size()) {
+                clipboardFocusIndex = 0;
+            }
+            highlightClipboardChip(clipboardFocusIndex);
+        }
+    }
+
+    // ══════════════════════════════════════
+    // হার্ডওয়্যার কিবোর্ড দিয়ে ক্লিপবোর্ড প্যানেল খোলা/বন্ধ করা ও DPAD নেভিগেশন
+    // ══════════════════════════════════════
+
+    // Windows+V (মেটা/উইন্ডোজ কী + V) চাপলে কল হয়। এক্সটার্নাল কিবোর্ড লাগানো
+    // অবস্থায় স্বাভাবিকভাবে আমাদের ইনপুট ভিউ (আর তার ভেতরের ক্লিপবোর্ড স্ট্রিপ)
+    // দেখানো হয় না — SHOW_FORCED দিয়ে জোর করে সেটা দেখানো হচ্ছে, যাতে মাউস ছাড়াই
+    // ক্লিপবোর্ড হিস্টোরি দেখে বাছাই করা যায়।
+    private void openClipboardPanelViaHardware() {
+        // InputMethodService-এর নিজস্ব requestShowSelf(SHOW_FORCED) মেথডটাই এক্সটার্নাল
+        // কিবোর্ড লাগানো থাকলেও আমাদের ইনপুট ভিউ জোর করে দেখানোর সরকারি/ডকুমেন্টেড উপায়
+        requestShowSelf(InputMethodManager.SHOW_FORCED);
+        if (keyboardView == null) return;
+
+        View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
+        View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
+        if (suggestionStrip == null || clipboardScroll == null) return;
+
+        showClipboardInUI(); // সবশেষ কপি করা জিনিস দিয়ে তালিকা রিফ্রেশ
+        suggestionStrip.setVisibility(View.GONE);
+        clipboardScroll.setVisibility(View.VISIBLE);
+
+        clipboardHardwareNavActive = true;
+        clipboardFocusIndex = clipboardChipButtons.isEmpty() ? -1 : 0;
+        highlightClipboardChip(clipboardFocusIndex);
+        doHaptic();
+    }
+
+    // প্যানেল বন্ধ করে suggestion strip ফিরিয়ে আনা হচ্ছে — পেস্ট করার পরে,
+    // Escape/Back চাপলে, অথবা Win+V দিয়ে টগল-বন্ধ করার সময় ব্যবহৃত হয়
+    private void closeClipboardPanel() {
+        if (keyboardView != null) {
+            View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
+            View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
+            if (clipboardScroll != null) clipboardScroll.setVisibility(View.GONE);
+            if (suggestionStrip != null) suggestionStrip.setVisibility(View.VISIBLE);
+        }
+        clipboardHardwareNavActive = false;
+        clipboardFocusIndex = -1;
+    }
+
+    // বর্তমানে ফোকাসড চিপটাকে দৃশ্যত হাইলাইট করা (থিমের accent রঙে) এবং বাকিগুলো
+    // স্বাভাবিক ব্যাকগ্রাউন্ডে ফিরিয়ে আনা হচ্ছে, সাথে ভিউ-ফোকাসও (accessibility/keyboard
+    // ফোকাস রিং-এর জন্য) আর স্ক্রলে সেটা দৃশ্যমান জায়গায় আনা হচ্ছে
+    private void highlightClipboardChip(int index) {
+        for (int i = 0; i < clipboardChipButtons.size(); i++) {
+            Button b = clipboardChipButtons.get(i);
+            if (i == index) {
+                b.setBackgroundTintList(ColorStateList.valueOf(themeAccentBg));
+                b.requestFocus();
+                View clipboardScroll = keyboardView != null ? keyboardView.findViewById(R.id.clipboard_scroll) : null;
+                if (clipboardScroll instanceof android.widget.HorizontalScrollView) {
+                    ((android.widget.HorizontalScrollView) clipboardScroll).requestChildFocus(b, b);
+                }
+            } else {
+                b.setBackgroundTintList(null);
+            }
+        }
+    }
+
+    // দিকনির্দেশনা (-1 = আগেরটা/বাঁয়ে, +1 = পরেরটা/ডানে) অনুযায়ী ফোকাস সরানো হয়,
+    // তালিকার শুরু/শেষে গিয়ে থেমে যায় (loop না করে) — Windows-এর Win+V প্যানেলের
+    // মতোই স্বাভাবিক অনুভূতি
+    private void moveClipboardFocus(int direction) {
+        if (clipboardChipButtons.isEmpty()) return;
+        int next = clipboardFocusIndex + direction;
+        if (next < 0) next = 0;
+        if (next >= clipboardChipButtons.size()) next = clipboardChipButtons.size() - 1;
+        clipboardFocusIndex = next;
+        highlightClipboardChip(clipboardFocusIndex);
+        doHaptic();
+    }
+
+    // Enter চাপলে বর্তমানে ফোকাসড চিপটাই পেস্ট হবে — ঠিক মাউস দিয়ে ট্যাপ করলে যা হতো তাই,
+    // performClick() ব্যবহার করায় paste + panel বন্ধ করার লজিক (onClickListener-এ) পুনর্ব্যবহার হচ্ছে
+    private void activateFocusedClipboardChip() {
+        if (clipboardFocusIndex < 0 || clipboardFocusIndex >= clipboardChipButtons.size()) return;
+        clipboardChipButtons.get(clipboardFocusIndex).performClick();
     }
 
     private ArrayList<String> getPinnedItems() {
@@ -736,12 +847,13 @@ public class MyKeyboardService extends InputMethodService {
 
             boolean isOpen = clipboardScroll.getVisibility() == View.VISIBLE;
             if (isOpen) {
-                clipboardScroll.setVisibility(View.GONE);
-                suggestionStrip.setVisibility(View.VISIBLE);
+                closeClipboardPanel();
             } else {
                 showClipboardInUI(); // এখনকার একই লজিক দিয়ে সবশেষ কপি করা জিনিস রিফ্রেশ করা
                 suggestionStrip.setVisibility(View.GONE);
                 clipboardScroll.setVisibility(View.VISIBLE);
+                // এটা টাচ দিয়ে খোলা হয়েছে (মাউস/আঙুল আছে) — তাই DPAD হার্ডওয়্যার-নেভিগেশন মোড সক্রিয় করা হচ্ছে না
+                clipboardHardwareNavActive = false;
             }
         });
 
@@ -1537,20 +1649,53 @@ public class MyKeyboardService extends InputMethodService {
             if (event.getRepeatCount() == 0) { altKeyDown = true; altDownAtMs = System.currentTimeMillis(); }
             return super.onKeyDown(keyCode, event);
         }
-        // সিস্টেম এখন সঠিকভাবে Ctrl/Alt রিলিজড রিপোর্ট করছে — leftover ট্র্যাকিং সাথে সাথে ক্লিয়ার করো
+        // Windows/মেটা কী নিজেই চাপা হলে — Ctrl/Alt-এর মতোই শুধু আসল down-এ ট্র্যাক করা হচ্ছে,
+        // যাতে stuck মেটা-স্টেটের কারণে সাধারণ "v" টাইপে ভুলবশত ক্লিপবোর্ড প্যানেল খুলে না যায়
+        if (keyCode == KeyEvent.KEYCODE_META_LEFT || keyCode == KeyEvent.KEYCODE_META_RIGHT) {
+            if (event.getRepeatCount() == 0) { metaKeyDown = true; metaDownAtMs = System.currentTimeMillis(); }
+            return super.onKeyDown(keyCode, event);
+        }
+        // সিস্টেম এখন সঠিকভাবে Ctrl/Alt/Meta রিলিজড রিপোর্ট করছে — leftover ট্র্যাকিং সাথে সাথে ক্লিয়ার করো
         if (!event.isCtrlPressed()) ctrlKeyDown = false;
         if (!event.isAltPressed()) altKeyDown = false;
+        if (!event.isMetaPressed()) metaKeyDown = false;
 
-        // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি)
-        // শুধু event.isCtrlPressed()/isAltPressed()-এর ওপর ভরসা না করে, Ctrl ও Alt
-        // দুটোই আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী সম্প্রতি (ALT_COMBO_WINDOW_MS-এর মধ্যে)
-        // সত্যিই চাপা হয়েছে কিনা সেটাও চেক করা হচ্ছে — নাহলে stuck meta flag-এর কারণে
-        // সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে (এটাই মূল বাগ ছিল)।
+        // ১.৫ ক্লিপবোর্ড প্যানেল খোলা থাকলে (Win+V দিয়ে খোলা হয়েছে) — মাউস নেই ধরে নিয়ে
+        // অ্যারো কী দিয়ে চিপগুলোর মধ্যে ফোকাস সরানো আর Enter দিয়ে পেস্ট/সিলেক্ট করা হয়,
+        // Escape/Back দিয়ে বন্ধ করা যায়। এই ব্লকটা সাধারণ DPAD/Enter হ্যান্ডলিং-এর
+        // (নিচে, টেক্সট-ফিল্ড কার্সর মুভমেন্টের জন্য) আগে বসানো, যাতে প্যানেল খোলা
+        // অবস্থায় অ্যারো কী কার্সর না সরিয়ে চিপ-নেভিগেশনই করে
+        if (clipboardHardwareNavActive) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                moveClipboardFocus(-1);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                moveClipboardFocus(1);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                if (event.getRepeatCount() == 0) activateFocusedClipboardChip();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BACK) {
+                closeClipboardPanel();
+                return true;
+            }
+        }
+
+        // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি) / Win + V ক্লিপবোর্ড হিস্টোরি
+        // শুধু event.isCtrlPressed()/isAltPressed()/isMetaPressed()-এর ওপর ভরসা না করে,
+        // মডিফায়ার কী গুলো আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী সম্প্রতি (ALT_COMBO_WINDOW_MS-এর
+        // মধ্যে) সত্যিই চাপা হয়েছে কিনা সেটাও চেক করা হচ্ছে — নাহলে stuck meta flag-এর
+        // কারণে সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে/ক্লিপবোর্ড প্যানেল খুলে যেতে পারে।
         if (keyCode == KeyEvent.KEYCODE_V) {
             long now = System.currentTimeMillis();
             boolean genuineCombo = event.isCtrlPressed() && event.isAltPressed()
                     && ctrlKeyDown && (now - ctrlDownAtMs) <= ALT_COMBO_WINDOW_MS
                     && altKeyDown && (now - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
+            boolean genuineMetaCombo = event.isMetaPressed()
+                    && metaKeyDown && (now - metaDownAtMs) <= ALT_COMBO_WINDOW_MS;
             if (genuineCombo) {
                 if (event.getRepeatCount() == 0) {
                     isEnglishMode = !isEnglishMode;
@@ -1565,6 +1710,20 @@ public class MyKeyboardService extends InputMethodService {
                 // মেটা-ফ্ল্যাগ true থাকলেও আমাদের ট্র্যাকিং অনুযায়ী এটা ইচ্ছাকৃত কম্বো নয়
                 // (leftover/stuck) — তাই ভাষা না বদলে "v" স্বাভাবিকভাবেই টাইপ হবে
                 ctrlKeyDown = false; altKeyDown = false;
+            } else if (genuineMetaCombo) {
+                // Windows কী + V — ক্লিপবোর্ড হিস্টোরি প্যানেল টগল করা হচ্ছে
+                if (event.getRepeatCount() == 0) {
+                    if (clipboardHardwareNavActive) {
+                        closeClipboardPanel();
+                    } else {
+                        openClipboardPanelViaHardware();
+                    }
+                    metaKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
+                }
+                return true;
+            } else if (event.isMetaPressed()) {
+                // leftover/stuck মেটা ফ্ল্যাগ — সাধারণ "v" স্বাভাবিকভাবেই টাইপ হবে
+                metaKeyDown = false;
             }
         }
 
@@ -1658,6 +1817,8 @@ public class MyKeyboardService extends InputMethodService {
             ctrlKeyDown = false;
         } else if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
             altKeyDown = false;
+        } else if (keyCode == KeyEvent.KEYCODE_META_LEFT || keyCode == KeyEvent.KEYCODE_META_RIGHT) {
+            metaKeyDown = false;
         }
         return super.onKeyUp(keyCode, event);
     }
