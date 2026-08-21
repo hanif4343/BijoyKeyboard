@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    এক্সটার্নাল/হার্ডওয়্যার কিবোর্ড দিয়ে Windows+V চাপলে এই কমপ্যাক্ট লেআউটটাই
+    দেখানো হয় — পুরো QWERTY কিবোর্ড (keyboard_layout.xml) না। ঠিক PC-তে Win+V
+    চাপলে যেমন হয় তেমনি: ওপর থেকে নিচে সাম্প্রতিক কপি করা আইটেমগুলো একটার পর
+    একটা কার্ড আকারে সাজানো, প্রতিটা এক লাইনে (বড় টেক্সট হলে ... দিয়ে কাটা)।
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#111827"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="ক্লিপবোর্ড"
+            android:textColor="#94A3B8"
+            android:textSize="11sp"/>
+
+        <TextView
+            android:id="@+id/hw_clip_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↑↓ বাছাই · Enter পেস্ট · Esc বন্ধ"
+            android:textColor="#64748B"
+            android:textSize="9sp"
+            android:layout_marginEnd="8dp"/>
+
+        <TextView
+            android:id="@+id/hw_clip_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:text="✕"
+            android:textColor="#94A3B8"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:background="@drawable/key_background"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/hw_clip_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="260dp"
+        android:scrollbars="none"
+        android:fillViewport="false">
+
+        <LinearLayout
+            android:id="@+id/hw_clip_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"/>
+
+    </ScrollView>
+
+</LinearLayout>
