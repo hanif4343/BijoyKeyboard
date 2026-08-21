@@ -119,6 +119,26 @@ public class MyKeyboardService extends InputMethodService {
     private long lastHwAltTapTime = 0L;
     private static final long HW_LANG_DOUBLE_TAP_MS = 400;
 
+    // *** Win+V কেন "কিছুই হয় না" হতে পারে — মূল কারণ ***
+    // AOSP-এর নিজস্ব ডকুমেন্টেশন অনুযায়ী, প্রতিটা হার্ডওয়্যার কী-ইভেন্ট প্রথমে
+    // WindowManagerPolicy.interceptKeyBeforeDispatching()-এ যায় — "handles system
+    // shortcuts and other functions" — অ্যাপ/IME পর্যন্ত পৌঁছানোরও আগে। Meta
+    // (Windows) কী নির্দিষ্টভাবে Android-এ সিস্টেম-লেভেল শর্টকাটের জন্য সংরক্ষিত
+    // (recent apps, split-screen, screenshot ইত্যাদি) — তাই অনেক ডিভাইসে/OEM-এ
+    // Meta কী নিজে চাপলেই (V চাপার আগেই) সেটা সিস্টেম খেয়ে ফেলে, আমাদের কোড পর্যন্ত
+    // metaKeyDown=true হওয়ার সুযোগই পায় না। ফলে আগের কোডে (যেখানে metaKeyDown
+    // ট্র্যাকিং-ও লাগত) কম্বোটা কখনো "genuine" প্রমাণিত হতো না।
+    // তাই Win+V ডিটেকশন এখন শুধু event.isMetaPressed()-এর ওপর সরাসরি ভরসা করে (V
+    // কী-ইভেন্টে যে মেটা-স্টেট বিটটা থাকে, সেটা ইনপুট সিস্টেম কেন্দ্রীয়ভাবে ট্র্যাক
+    // করে, নির্দিষ্ট কী-ইভেন্ট অ্যাপ পর্যন্ত পৌঁছেছে কিনা তার ওপর নির্ভর করে না)।
+    //
+    // তবু, যদি পুরো Meta+V কম্বোটাই কোনো ডিভাইসে সম্পূর্ণ ইন্টারসেপ্ট হয়ে যায় (V
+    // ইভেন্টও না পৌঁছায়), সেক্ষেত্রে একটা গ্যারান্টিড বিকল্প হিসেবে — Ctrl কী পরপর
+    // দুইবার (৪০০ms-এর মধ্যে) চাপলেও ক্লিপবোর্ড ওভারলে খুলবে/বন্ধ হবে। Ctrl সিস্টেম-
+    // সংরক্ষিত না, তাই এটা সবসময় অ্যাপ পর্যন্ত পৌঁছানো উচিত। Alt চাপা থাকা অবস্থায়
+    // (Ctrl+Alt+V কম্বোর অংশ হিসেবে Ctrl চাপা হলে) এই ডাবল-ট্যাপ সক্রিয় হয় না।
+    private long lastHwCtrlTapTime = 0L;
+
     // পাসওয়ার্ড ফিল্ডে থাকলে suggestion/adaptive learning সম্পূর্ণ বন্ধ থাকবে (প্রাইভেসি)
     private boolean isPasswordField = false;
     // বর্তমান ফিল্ডের IME action (Done/Next/Search/Go/Send ইত্যাদি) — Enter কী-এর লেবেল/আচরণ এর ওপর নির্ভর করে
@@ -1798,7 +1818,28 @@ public class MyKeyboardService extends InputMethodService {
         // এইটুকু নিজস্ব ট্র্যাকিং না রাখলে stuck/leftover meta state-এর কারণে সাধারণ
         // "v" টাইপ করলেও ভাষা ভুলবশত বদলে যেতে পারে (নিচে বিস্তারিত দেখুন)।
         if (keyCode == KeyEvent.KEYCODE_CTRL_LEFT || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
-            if (event.getRepeatCount() == 0) { ctrlKeyDown = true; ctrlDownAtMs = System.currentTimeMillis(); }
+            if (event.getRepeatCount() == 0) {
+                long now = System.currentTimeMillis();
+                // Alt চাপা না থাকলেই শুধু ডাবল-ট্যাপ ট্রিগার সক্রিয় — নাহলে Ctrl+Alt+V
+                // কম্বোর প্রথম Ctrl-চাপাটাও ভুলবশত ক্লিপবোর্ড প্যানেল খুলে ফেলতে পারত।
+                // এটা Win+V-এর গ্যারান্টিড বিকল্প — Ctrl সিস্টেম-সংরক্ষিত না, তাই Meta
+                // কী ইন্টারসেপ্ট হয়ে গেলেও এটা কাজ করবে (ওপরের কমেন্ট দ্রষ্টব্য)
+                if (!altKeyDown) {
+                    boolean doubleTap = (now - lastHwCtrlTapTime) < HW_LANG_DOUBLE_TAP_MS;
+                    if (doubleTap) {
+                        if (clipboardHardwareNavActive) {
+                            closeClipboardPanel();
+                        } else {
+                            openClipboardPanelViaHardware();
+                        }
+                        lastHwCtrlTapTime = 0; // তিন/চারবার পরপর ট্যাপ করলে যেন বারবার টগল না হয়
+                        ctrlKeyDown = true; ctrlDownAtMs = now;
+                        return true;
+                    }
+                    lastHwCtrlTapTime = now;
+                }
+                ctrlKeyDown = true; ctrlDownAtMs = now;
+            }
             return super.onKeyDown(keyCode, event);
         }
         if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
@@ -1860,17 +1901,18 @@ public class MyKeyboardService extends InputMethodService {
         }
 
         // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি) / Win + V ক্লিপবোর্ড হিস্টোরি
-        // শুধু event.isCtrlPressed()/isAltPressed()/isMetaPressed()-এর ওপর ভরসা না করে,
-        // মডিফায়ার কী গুলো আমাদের নিজস্ব ট্র্যাকিং অনুযায়ী সম্প্রতি (ALT_COMBO_WINDOW_MS-এর
-        // মধ্যে) সত্যিই চাপা হয়েছে কিনা সেটাও চেক করা হচ্ছে — নাহলে stuck meta flag-এর
-        // কারণে সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে/ক্লিপবোর্ড প্যানেল খুলে যেতে পারে।
+        // Ctrl+Alt+V-এর জন্য এখনও নিজস্ব ট্র্যাকিং (genuineCombo) লাগে — নাহলে stuck
+        // flag-এর কারণে সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে। কিন্তু Win+V-এর জন্য
+        // (genuineMetaCombo) সরাসরি event.isMetaPressed() ব্যবহার করা হচ্ছে, কারণ Meta
+        // কী-এর keyDown ইভেন্টটা নিজেই সিস্টেম-লেভেলে ইন্টারসেপ্ট হয়ে যেতে পারে (ওপরে
+        // lastHwCtrlTapTime-এর কমেন্টে বিস্তারিত) — তাই আমাদের নিজস্ব metaKeyDown
+        // ট্র্যাকিং-এর ওপর ভরসা করলে কম্বোটা কখনো "genuine" প্রমাণিতই হতো না।
         if (keyCode == KeyEvent.KEYCODE_V) {
             long now = System.currentTimeMillis();
             boolean genuineCombo = event.isCtrlPressed() && event.isAltPressed()
                     && ctrlKeyDown && (now - ctrlDownAtMs) <= ALT_COMBO_WINDOW_MS
                     && altKeyDown && (now - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
-            boolean genuineMetaCombo = event.isMetaPressed()
-                    && metaKeyDown && (now - metaDownAtMs) <= ALT_COMBO_WINDOW_MS;
+            boolean genuineMetaCombo = event.isMetaPressed(); // মেটা কী-এর নিজস্ব keyDown সিস্টেম-লেভেলে ইন্টারসেপ্ট হয়ে যেতে পারে (ওপরের কমেন্ট দ্রষ্টব্য), তাই এখানে সরাসরি লাইভ মেটা-স্টেট বিটটাই ব্যবহার করা হচ্ছে
             if (genuineCombo) {
                 if (event.getRepeatCount() == 0) {
                     toggleLanguageMode();
