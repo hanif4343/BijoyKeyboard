@@ -44,23 +44,33 @@ public class MyKeyboardService extends InputMethodService {
     private ArrayList<String> clipboardHistory = new ArrayList<>();
 
     // ══════════════════════════════════════
-    // হার্ডওয়্যার (ব্লুটুথ/USB) কিবোর্ড দিয়ে Win+V ক্লিপবোর্ড নেভিগেশন
+    // হার্ডওয়্যার (ব্লুটুথ/USB) কিবোর্ড দিয়ে Win+V ক্লিপবোর্ড ওভারলে
     // ══════════════════════════════════════
-    // এক্সটার্নাল কিবোর্ড লাগানো থাকলে সাধারণত অন-স্ক্রিন কিবোর্ড ভিউ (আর তার
-    // ভেতরের ক্লিপবোর্ড স্ট্রিপ) নিজে থেকে ভেসে ওঠে না — Android ধরে নেয় ইউজারের
-    // আলাদা করে সফট কিবোর্ড দরকার নেই। কিন্তু Windows+V চাপলে ক্লিপবোর্ড হিস্টোরি
-    // দেখানোর জন্য আমাদের ভিউটাই দরকার, তাই সেই মুহূর্তে requestShowSelf(SHOW_FORCED)
-    // দিয়ে জোর করে ভিউ দেখানো হয় (openClipboardPanelViaHardware দ্রষ্টব্য) — বাকি
-    // সময় স্বাভাবিক আচরণ (হাইড থাকা) অক্ষত থাকে।
+    // এক্সটার্নাল কিবোর্ড লাগানো থাকলে সাধারণত অন-স্ক্রিন কিবোর্ড ভিউ নিজে থেকে
+    // ভেসে ওঠে না — Android ধরে নেয় ইউজারের আলাদা করে সফট কিবোর্ড দরকার নেই।
+    // Windows+V চাপলে PC-তে যেমন হয় (পুরো কিবোর্ড না, শুধু একটা সরু, ওপর-থেকে-নিচে
+    // সাজানো ক্লিপবোর্ড হিস্টোরি প্যানেল), এখানেও ঠিক তেমনই — hw_clipboard_overlay.xml
+    // নামের আলাদা, ছোট লেআউট setInputView() দিয়ে সাময়িকভাবে বসানো হয় (পুরো
+    // keyboard_layout.xml/QWERTY-এর বদলে), তারপর requestShowSelf(SHOW_FORCED) দিয়ে
+    // জোর করে দেখানো হয় — openClipboardPanelViaHardware() দ্রষ্টব্য। প্যানেল বন্ধ
+    // হলে (পেস্ট করার পর/Esc/আবার Win+V চেপে) closeClipboardPanel() আগের অবস্থায়
+    // (কোনো ভিউ না, হাইড থাকা) ফিরিয়ে আনে।
     // মাউস নেই ধরে নিয়ে (হার্ডওয়্যার কিবোর্ড সাধারণত টাচ-লেস প্রেক্ষাপটে ব্যবহৃত হয়),
-    // প্যানেল খোলা থাকা অবস্থায় ডানে/বাঁয়ে (বা ওপরে/নিচে) অ্যারো দিয়ে চিপগুলোর মধ্যে
-    // ফোকাস সরানো যায় আর Enter দিয়ে সিলেক্ট/পেস্ট করা যায় — নিচে moveClipboardFocus,
-    // activateFocusedClipboardChip, closeClipboardPanel দ্রষ্টব্য।
+    // ওপরে/নিচে অ্যারো দিয়ে আইটেমগুলোর মধ্যে ফোকাস সরানো যায় আর Enter দিয়ে
+    // সিলেক্ট/পেস্ট করা যায় — moveHwClipFocus, activateFocusedHwClipChip দ্রষ্টব্য।
     private boolean metaKeyDown = false;
     private long metaDownAtMs = 0L;
+    private View hwClipboardOverlayView;
+    private LinearLayout hwClipboardListContainer;
+    private ScrollView hwClipboardScrollView;
+    private List<Button> hwClipChipButtons = new ArrayList<>();
+    private int hwClipFocusIndex = -1;
+    private boolean clipboardHardwareNavActive = false; // true = কমপ্যাক্ট Win+V ওভারলে বর্তমানে খোলা
+
+    // টাচ দিয়ে (কিবোর্ডের ক্লিপবোর্ড আইকনে ট্যাপ করে) খোলা আনুভূমিক ক্লিপবোর্ড স্ট্রিপের
+    // চিপ বাটনগুলোর রেফারেন্স — এটা keyboardView-এর ভেতরের UI, হার্ডওয়্যার ওভারলে থেকে
+    // সম্পূর্ণ আলাদা (showClipboardInUI দ্রষ্টব্য)
     private List<Button> clipboardChipButtons = new ArrayList<>();
-    private int clipboardFocusIndex = -1;
-    private boolean clipboardHardwareNavActive = false;
     private boolean isG_Pressed = false;
     private boolean isEnglishMode = false;
     private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
@@ -180,6 +190,24 @@ public class MyKeyboardService extends InputMethodService {
         keySoundEnabled = settingsPrefs.getBoolean("key_sound", false);
         vibrationEnabled = settingsPrefs.getBoolean("vibration_enabled", true);
         vibrationStrengthPercent = settingsPrefs.getInt("vibration_strength", 60);
+    }
+
+    // *** এক্সটার্নাল কিবোর্ড + "Show on-screen keyboard" সেটিংস অফ থাকার আসল সমাধান ***
+    // শুধু requestShowSelf(SHOW_FORCED) কল করাটা যথেষ্ট নির্ভরযোগ্য না — Android নিজের
+    // ডকুমেন্টেশন/ইঞ্জিনিয়ারিং নোটেই এটাকে "সম্পূর্ণ সমাধান না" বলে উল্লেখ করা আছে,
+    // কারণ এটা কাজ করবে কিনা তা view/window ফোকাসের কিছু শর্তের ওপর নির্ভর করে, যেগুলো
+    // ফোনের Settings > System > Languages & input > Physical keyboard > "Show on-screen
+    // keyboard" অপশন বন্ধ থাকলে প্রথমেই পূরণ নাও হতে পারে।
+    // Gboard, FUTO Keyboard-সহ প্রায় সব কাস্টম কিবোর্ড অ্যাপ যেটা আসলে করে তা হলো
+    // onEvaluateInputViewShown() override করা — সিস্টেম ইনপুট ভিউ দেখাবে কিনা সিদ্ধান্ত
+    // নেওয়ার সময় ঠিক এই মেথডটাই জিজ্ঞেস করে, তাই এখানে true রিটার্ন করাটাই সবচেয়ে
+    // নির্ভরযোগ্য উপায় হার্ডওয়্যার কিবোর্ড/সেটিংস যাই থাকুক না কেন ভিউ দেখানোর জন্য।
+    // clipboardHardwareNavActive শুধু তখনই true, যখন Win+V ওভারলে দেখানো দরকার —
+    // বাকি সময় স্বাভাবিক (হাইড থাকা) আচরণ অক্ষত থাকে।
+    @Override
+    public boolean onEvaluateInputViewShown() {
+        if (clipboardHardwareNavActive) return true;
+        return super.onEvaluateInputViewShown();
     }
 
     @Override
@@ -395,11 +423,15 @@ public class MyKeyboardService extends InputMethodService {
                 ClipData.Item item = clip.getItemAt(0);
                 if (item != null && item.getText() != null) {
                     String text = item.getText().toString();
-                    if (!clipboardHistory.contains(text)) {
-                        clipboardHistory.add(0, text);
-                        if (clipboardHistory.size() > 10) {
-                            clipboardHistory.remove(clipboardHistory.size() - 1);
-                        }
+                    // আগে: জিনিসটা লিস্টে আগে থেকে থাকলে কিছুই করা হতো না, ফলে সেটা
+                    // পুরনো (নিচের) জায়গাতেই আটকে থাকত। এখন: আগের অবস্থান থেকে সরিয়ে
+                    // (remove) আবার একদম শুরুতে (index 0) বসানো হচ্ছে — ঠিক Windows-এর
+                    // Win+V বা Gboard-এর ক্লিপবোর্ডের মতো, একই জিনিস আবার কপি করলে সেটাই
+                    // সবার আগে/সাম্প্রতিক হিসেবে দেখাবে
+                    clipboardHistory.remove(text); // ArrayList.remove(Object) — না থাকলে নিরাপদে কিছুই করে না
+                    clipboardHistory.add(0, text);
+                    if (clipboardHistory.size() > 10) {
+                        clipboardHistory.remove(clipboardHistory.size() - 1);
                     }
                 }
             }
@@ -474,97 +506,185 @@ public class MyKeyboardService extends InputMethodService {
             container.addView(btn);
             clipboardChipButtons.add(btn);
         }
+    }
 
-        // হার্ডওয়্যার-নেভিগেশন চলাকালীন লিস্ট রিফ্রেশ হলে (যেমন নতুন কপি আসায়)
-        // আগের ফোকাস ইনডেক্স নতুন তালিকার সীমার মধ্যে ক্ল্যাম্প করে আবার হাইলাইট করা হচ্ছে
-        if (clipboardHardwareNavActive) {
-            if (clipboardChipButtons.isEmpty()) {
-                clipboardFocusIndex = -1;
-            } else if (clipboardFocusIndex < 0 || clipboardFocusIndex >= clipboardChipButtons.size()) {
-                clipboardFocusIndex = 0;
-            }
-            highlightClipboardChip(clipboardFocusIndex);
+    // ══════════════════════════════════════
+    // হার্ডওয়্যার কিবোর্ড দিয়ে Win+V কমপ্যাক্ট ক্লিপবোর্ড ওভারলে
+    // ══════════════════════════════════════
+
+    // hw_clipboard_overlay.xml লেআউটটা একবারই inflate করা হয়, বারবার না —
+    // এটাই সেই ভিউ যেটা Win+V চাপলে পুরো QWERTY কিবোর্ডের বদলে সাময়িকভাবে দেখানো হবে
+    private void ensureHwClipboardOverlay() {
+        if (hwClipboardOverlayView != null) return;
+        hwClipboardOverlayView = getLayoutInflater().inflate(R.layout.hw_clipboard_overlay, null);
+        hwClipboardListContainer = hwClipboardOverlayView.findViewById(R.id.hw_clip_list);
+        hwClipboardScrollView = hwClipboardOverlayView.findViewById(R.id.hw_clip_scroll);
+        View closeBtn = hwClipboardOverlayView.findViewById(R.id.hw_clip_close);
+        if (closeBtn != null) closeBtn.setOnClickListener(v -> closeClipboardPanel());
+    }
+
+    // সবশেষ কপি করা তালিকা দিয়ে ওপর-থেকে-নিচে সাজানো কার্ড-লিস্টটা রিফ্রেশ করা হচ্ছে —
+    // ঠিক PC-তে Windows+V চাপলে যেমন হয় সেভাবেই: প্রতিটা আইটেম আলাদা লাইনে, বড়
+    // টেক্সট হলে maxLines(1) + ellipsize দিয়ে স্বয়ংক্রিয়ভাবে "..." কেটে দেখানো হয়
+    // (নিজে থেকে substring করে ক্যারেক্টার-সংখ্যা হিসাব করার দরকার নেই)
+    private void populateHwClipboardOverlay() {
+        if (hwClipboardListContainer == null) return;
+        hwClipboardListContainer.removeAllViews();
+        hwClipChipButtons.clear();
+
+        ArrayList<String> pinnedItems = getPinnedItems();
+        ArrayList<String> allItems = new ArrayList<>();
+        for (String p : pinnedItems) allItems.add("📌 " + p);
+        for (String h : clipboardHistory) {
+            if (!pinnedItems.contains(h)) allItems.add(h);
+        }
+
+        if (allItems.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("এখনো কিছু কপি করা হয়নি");
+            empty.setTextColor(0xFF64748B);
+            empty.setTextSize(12);
+            empty.setPadding(16, 20, 16, 20);
+            hwClipboardListContainer.addView(empty);
+            return;
+        }
+
+        for (String rawText : allItems) {
+            boolean isPinned = rawText.startsWith("📌 ");
+            String text = isPinned ? rawText.substring(3) : rawText;
+
+            Button row = new Button(this);
+            row.setText((isPinned ? "📌 " : "") + text);
+            row.setSingleLine(true);
+            row.setEllipsize(android.text.TextUtils.TruncateAt.END); // বড় টেক্সট হলে শুরুর কয়েকটা অক্ষরের পর "..." — কন্টেইনারের প্রস্থ অনুযায়ী স্বয়ংক্রিয়ভাবে
+            row.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+            row.setAllCaps(false);
+            row.setTextSize(13);
+            row.setTextColor(isPinned ? 0xFF38BDF8 : 0xFFE5E7EB);
+            row.setBackgroundResource(R.drawable.card_bg);
+            row.setPadding(24, 22, 24, 22);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.setMargins(0, 0, 0, 8);
+            row.setLayoutParams(params);
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(true);
+
+            row.setOnClickListener(v -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.commitText(text, 1);
+                doHaptic();
+                closeClipboardPanel();
+            });
+
+            row.setOnLongClickListener(v -> {
+                if (isPinned) {
+                    unpinItem(text);
+                    Toast.makeText(this, "Pin সরানো হয়েছে", Toast.LENGTH_SHORT).show();
+                } else {
+                    pinItem(text);
+                    Toast.makeText(this, "📌 Pin হয়েছে!", Toast.LENGTH_SHORT).show();
+                }
+                populateHwClipboardOverlay();
+                return true;
+            });
+
+            hwClipboardListContainer.addView(row);
+            hwClipChipButtons.add(row);
         }
     }
 
-    // ══════════════════════════════════════
-    // হার্ডওয়্যার কিবোর্ড দিয়ে ক্লিপবোর্ড প্যানেল খোলা/বন্ধ করা ও DPAD নেভিগেশন
-    // ══════════════════════════════════════
-
-    // Windows+V (মেটা/উইন্ডোজ কী + V) চাপলে কল হয়। এক্সটার্নাল কিবোর্ড লাগানো
-    // অবস্থায় স্বাভাবিকভাবে আমাদের ইনপুট ভিউ (আর তার ভেতরের ক্লিপবোর্ড স্ট্রিপ)
-    // দেখানো হয় না — SHOW_FORCED দিয়ে জোর করে সেটা দেখানো হচ্ছে, যাতে মাউস ছাড়াই
-    // ক্লিপবোর্ড হিস্টোরি দেখে বাছাই করা যায়।
+    // Windows+V (মেটা/উইন্ডোজ কী + V) চাপলে কল হয়। এক্সটার্নাল কিবোর্ড লাগানো অবস্থায়
+    // স্বাভাবিকভাবে আমাদের ইনপুট ভিউ দেখানো হয় না (এমনকি ফোনের সেটিংসে "Show on-screen
+    // keyboard" অপশন বন্ধ থাকলেও) — তাই তিনটা কাজ একসাথে করা হচ্ছে:
+    // (১) clipboardHardwareNavActive = true — এটা আগে সেট করা *জরুরি*, কারণ
+    //     onEvaluateInputViewShown() override-টা এই ফ্ল্যাগ দেখেই সিদ্ধান্ত নেয় (নিচে
+    //     requestShowSelf কল করার সময় সিস্টেম এই মেথডটা আবার জিজ্ঞেস করতে পারে)
+    // (২) setInputView() দিয়ে পুরো QWERTY কিবোর্ডের (keyboard_layout.xml) বদলে শুধু
+    //     এই কমপ্যাক্ট ওভারলেটাই ভিউ হিসেবে বসানো — যাতে অযথা কী-বোর্ডের বাকি অংশ না দেখায়
+    // (৩) requestShowSelf(SHOW_FORCED) — ইনপুট ভিউ জোর করে দেখানোর অনুরোধ; এটা একাই
+    //     সবসময় যথেষ্ট না, তাই (১)-এর override-টাই মূল ভরসা
     private void openClipboardPanelViaHardware() {
-        // InputMethodService-এর নিজস্ব requestShowSelf(SHOW_FORCED) মেথডটাই এক্সটার্নাল
-        // কিবোর্ড লাগানো থাকলেও আমাদের ইনপুট ভিউ জোর করে দেখানোর সরকারি/ডকুমেন্টেড উপায়
+        ensureHwClipboardOverlay();
+        if (hwClipboardOverlayView == null) return;
+
+        populateHwClipboardOverlay();
+        clipboardHardwareNavActive = true; // onEvaluateInputViewShown() override সক্রিয় হওয়ার আগেই সেট করা লাগবে
+        setInputView(hwClipboardOverlayView);
         requestShowSelf(InputMethodManager.SHOW_FORCED);
-        if (keyboardView == null) return;
 
-        View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
-        View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
-        if (suggestionStrip == null || clipboardScroll == null) return;
-
-        showClipboardInUI(); // সবশেষ কপি করা জিনিস দিয়ে তালিকা রিফ্রেশ
-        suggestionStrip.setVisibility(View.GONE);
-        clipboardScroll.setVisibility(View.VISIBLE);
-
-        clipboardHardwareNavActive = true;
-        clipboardFocusIndex = clipboardChipButtons.isEmpty() ? -1 : 0;
-        highlightClipboardChip(clipboardFocusIndex);
+        hwClipFocusIndex = hwClipChipButtons.isEmpty() ? -1 : 0;
+        highlightHwClipChip(hwClipFocusIndex);
         doHaptic();
     }
 
-    // প্যানেল বন্ধ করে suggestion strip ফিরিয়ে আনা হচ্ছে — পেস্ট করার পরে,
-    // Escape/Back চাপলে, অথবা Win+V দিয়ে টগল-বন্ধ করার সময় ব্যবহৃত হয়
+    // প্যানেল বন্ধ করা হচ্ছে — দুটো ভিন্ন পরিস্থিতির জন্য দুটো ভিন্ন পথ:
+    //  ১) হার্ডওয়্যার Win+V দিয়ে খোলা কমপ্যাক্ট ওভারলে বন্ধ হলে — clipboardHardwareNavActive
+    //     আগেই false করে দেওয়া হচ্ছে (যাতে onEvaluateInputViewShown() স্বাভাবিক আচরণে
+    //     ফিরে যায়), তারপর setInputView() দিয়ে আগের ভিউ (keyboardView থাকলে সেটা,
+    //     নাহলে null — যাতে পরের বার স্বাভাবিক শো-এর সময় onCreateInputView() নতুন করে
+    //     ঠিকভাবে কল হয়) ফিরিয়ে এনে requestHideSelf() দিয়ে পুরোপুরি হাইড করা হচ্ছে —
+    //     মানে এক্সটার্নাল কিবোর্ডে আপনি যেভাবে "হাইড করে রাখা" পছন্দ করেন, ঠিক সেই
+    //     অবস্থাতেই ফিরে যাওয়া।
+    //  ২) টাচ দিয়ে (কিবোর্ডের ক্লিপবোর্ড আইকনে ট্যাপ করে) খোলা আনুভূমিক স্ট্রিপ বন্ধ
+    //     হলে — শুধু keyboardView-এর ভেতরের suggestion/clipboard strip টগল-ব্যাক করা হয়,
+    //     পুরো ইনপুট ভিউ হাইড করার দরকার নেই।
     private void closeClipboardPanel() {
-        if (keyboardView != null) {
+        boolean wasHardwareOverlay = clipboardHardwareNavActive;
+        clipboardHardwareNavActive = false;
+        hwClipFocusIndex = -1;
+
+        if (wasHardwareOverlay) {
+            if (keyboardView != null) {
+                setInputView(keyboardView);
+            } else {
+                setInputView(null);
+            }
+            requestHideSelf(0);
+        } else if (keyboardView != null) {
             View clipboardScroll = keyboardView.findViewById(R.id.clipboard_scroll);
             View suggestionStrip = keyboardView.findViewById(R.id.suggestion_strip);
             if (clipboardScroll != null) clipboardScroll.setVisibility(View.GONE);
             if (suggestionStrip != null) suggestionStrip.setVisibility(View.VISIBLE);
         }
-        clipboardHardwareNavActive = false;
-        clipboardFocusIndex = -1;
     }
 
-    // বর্তমানে ফোকাসড চিপটাকে দৃশ্যত হাইলাইট করা (থিমের accent রঙে) এবং বাকিগুলো
-    // স্বাভাবিক ব্যাকগ্রাউন্ডে ফিরিয়ে আনা হচ্ছে, সাথে ভিউ-ফোকাসও (accessibility/keyboard
-    // ফোকাস রিং-এর জন্য) আর স্ক্রলে সেটা দৃশ্যমান জায়গায় আনা হচ্ছে
-    private void highlightClipboardChip(int index) {
-        for (int i = 0; i < clipboardChipButtons.size(); i++) {
-            Button b = clipboardChipButtons.get(i);
+    // বর্তমানে ফোকাসড কার্ডটাকে দৃশ্যত হাইলাইট করা (থিমের accent রঙে) এবং বাকিগুলো
+    // স্বাভাবিক card_bg রঙে ফিরিয়ে আনা হচ্ছে, সাথে ভিউ-ফোকাসও আর ভার্টিক্যাল
+    // স্ক্রলে সেটা দৃশ্যমান জায়গায় আনা হচ্ছে
+    private void highlightHwClipChip(int index) {
+        for (int i = 0; i < hwClipChipButtons.size(); i++) {
+            Button b = hwClipChipButtons.get(i);
             if (i == index) {
                 b.setBackgroundTintList(ColorStateList.valueOf(themeAccentBg));
                 b.requestFocus();
-                View clipboardScroll = keyboardView != null ? keyboardView.findViewById(R.id.clipboard_scroll) : null;
-                if (clipboardScroll instanceof android.widget.HorizontalScrollView) {
-                    ((android.widget.HorizontalScrollView) clipboardScroll).requestChildFocus(b, b);
-                }
+                if (hwClipboardScrollView != null) hwClipboardScrollView.requestChildFocus(b, b);
             } else {
                 b.setBackgroundTintList(null);
             }
         }
     }
 
-    // দিকনির্দেশনা (-1 = আগেরটা/বাঁয়ে, +1 = পরেরটা/ডানে) অনুযায়ী ফোকাস সরানো হয়,
+    // দিকনির্দেশনা (-1 = ওপরে/আগেরটা, +1 = নিচে/পরেরটা) অনুযায়ী ফোকাস সরানো হয়,
     // তালিকার শুরু/শেষে গিয়ে থেমে যায় (loop না করে) — Windows-এর Win+V প্যানেলের
     // মতোই স্বাভাবিক অনুভূতি
-    private void moveClipboardFocus(int direction) {
-        if (clipboardChipButtons.isEmpty()) return;
-        int next = clipboardFocusIndex + direction;
+    private void moveHwClipFocus(int direction) {
+        if (hwClipChipButtons.isEmpty()) return;
+        int next = hwClipFocusIndex + direction;
         if (next < 0) next = 0;
-        if (next >= clipboardChipButtons.size()) next = clipboardChipButtons.size() - 1;
-        clipboardFocusIndex = next;
-        highlightClipboardChip(clipboardFocusIndex);
+        if (next >= hwClipChipButtons.size()) next = hwClipChipButtons.size() - 1;
+        hwClipFocusIndex = next;
+        highlightHwClipChip(hwClipFocusIndex);
         doHaptic();
     }
 
-    // Enter চাপলে বর্তমানে ফোকাসড চিপটাই পেস্ট হবে — ঠিক মাউস দিয়ে ট্যাপ করলে যা হতো তাই,
-    // performClick() ব্যবহার করায় paste + panel বন্ধ করার লজিক (onClickListener-এ) পুনর্ব্যবহার হচ্ছে
-    private void activateFocusedClipboardChip() {
-        if (clipboardFocusIndex < 0 || clipboardFocusIndex >= clipboardChipButtons.size()) return;
-        clipboardChipButtons.get(clipboardFocusIndex).performClick();
+    // Enter চাপলে বর্তমানে ফোকাসড কার্ডটাই পেস্ট হবে — ঠিক মাউস দিয়ে ট্যাপ করলে যা হতো
+    // তাই, performClick() ব্যবহার করায় paste + panel বন্ধ করার লজিক (onClickListener-এ)
+    // পুনর্ব্যবহার হচ্ছে
+    private void activateFocusedHwClipChip() {
+        if (hwClipFocusIndex < 0 || hwClipFocusIndex >= hwClipChipButtons.size()) return;
+        hwClipChipButtons.get(hwClipFocusIndex).performClick();
     }
 
     private ArrayList<String> getPinnedItems() {
@@ -1712,28 +1832,31 @@ public class MyKeyboardService extends InputMethodService {
         if (!event.isAltPressed()) altKeyDown = false;
         if (!event.isMetaPressed()) metaKeyDown = false;
 
-        // ১.৫ ক্লিপবোর্ড প্যানেল খোলা থাকলে (Win+V দিয়ে খোলা হয়েছে) — মাউস নেই ধরে নিয়ে
-        // অ্যারো কী দিয়ে চিপগুলোর মধ্যে ফোকাস সরানো আর Enter দিয়ে পেস্ট/সিলেক্ট করা হয়,
-        // Escape/Back দিয়ে বন্ধ করা যায়। এই ব্লকটা সাধারণ DPAD/Enter হ্যান্ডলিং-এর
-        // (নিচে, টেক্সট-ফিল্ড কার্সর মুভমেন্টের জন্য) আগে বসানো, যাতে প্যানেল খোলা
-        // অবস্থায় অ্যারো কী কার্সর না সরিয়ে চিপ-নেভিগেশনই করে
+        // ১.৫ ক্লিপবোর্ড ওভারলে খোলা থাকলে (Win+V দিয়ে খোলা হয়েছে) — মাউস নেই ধরে নিয়ে
+        // শুধু ওপরে/নিচে অ্যারো দিয়ে (PC-তে Win+V প্যানেলে যেমন হয় ঠিক তেমনই — লিস্টটা
+        // ভার্টিক্যাল) আইটেমের মধ্যে ফোকাস সরানো আর Enter দিয়ে পেস্ট/সিলেক্ট করা হয়,
+        // Escape/Back দিয়ে বন্ধ করা যায়। অন্য যেকোনো কী চাপলে (যেমন সরাসরি টাইপ শুরু
+        // করলে) ওভারলেটা বন্ধ হয়ে যাবে আর সেই কী স্বাভাবিকভাবেই প্রসেস হবে (নিচে) —
+        // আলাদা করে Esc চাপার দরকার নেই। এই ব্লকটা সাধারণ DPAD/Enter হ্যান্ডলিং-এর
+        // (নিচে, টেক্সট-ফিল্ড কার্সর মুভমেন্টের জন্য) আগে বসানো।
         if (clipboardHardwareNavActive) {
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                moveClipboardFocus(-1);
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                moveHwClipFocus(-1);
                 return true;
             }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                moveClipboardFocus(1);
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                moveHwClipFocus(1);
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                if (event.getRepeatCount() == 0) activateFocusedClipboardChip();
+                if (event.getRepeatCount() == 0) activateFocusedHwClipChip();
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BACK) {
                 closeClipboardPanel();
                 return true;
             }
+            closeClipboardPanel(); // অন্য কী — ওভারলে বন্ধ করে নিচের স্বাভাবিক প্রসেসিং চালিয়ে যাওয়া হচ্ছে
         }
 
         // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি) / Win + V ক্লিপবোর্ড হিস্টোরি
