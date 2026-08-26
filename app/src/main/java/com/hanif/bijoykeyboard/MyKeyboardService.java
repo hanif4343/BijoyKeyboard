@@ -498,10 +498,15 @@ public class MyKeyboardService extends InputMethodService {
                     LinearLayout.LayoutParams.MATCH_PARENT);
             params.setMargins(5, 5, 5, 5);
             btn.setLayoutParams(params);
-            // হার্ডওয়্যার কিবোর্ডে DPAD দিয়ে ফোকাস সরানো আর ট্যাপ — দুটোই যেন কাজ করে,
-            // তাই ফোকাসেবল রাখা হচ্ছে (মাউস না থাকলেও ভিউ ফোকাস পেতে পারবে)
-            btn.setFocusable(true);
-            btn.setFocusableInTouchMode(true);
+            // *** ফিক্স: এক টাচেই পেস্ট না হওয়ার আসল কারণ ছিল এখানে ***
+            // আগে এখানে setFocusable(true)/setFocusableInTouchMode(true) ছিল (হার্ডওয়্যার
+            // DPAD নেভিগেশনের জন্য যোগ করা হয়েছিল)। কিন্তু IME-এর উইন্ডো সাধারণত
+            // input-focusable না (যাতে টাচ করলে অ্যাপের EditText থেকে ফোকাস না কেড়ে নেয়)
+            // — আর তার ভেতরের একটা চাইল্ড ভিউকে focusableInTouchMode(true) করলে প্রথম
+            // ট্যাপটা শুধু ফোকাস নেওয়ার জন্য খরচ হয়ে যায়, ক্লিক ইভেন্ট আসে দ্বিতীয়
+            // ট্যাপে। যেহেতু হার্ডওয়্যার DPAD নেভিগেশন এখন সম্পূর্ণ আলাদা ওভারলেতে
+            // (hw_clipboard_overlay.xml/hwClipChipButtons) হয়, এই টাচ-স্ট্রিপের বাটনে
+            // ফোকাসেবল রাখার আর দরকার নেই — বাদ দেওয়া হলো, তাই এক ট্যাপেই পেস্ট হবে।
 
             btn.setOnClickListener(v -> {
                 InputConnection ic = getCurrentInputConnection();
