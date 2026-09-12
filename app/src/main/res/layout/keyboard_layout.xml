@@ -16,9 +16,10 @@
         android:paddingLeft="8dp">
 
         <TextView
+            android:id="@+id/mode_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Bijoy"
+            android:text="Classic"
             android:textColor="#6B7280"
             android:textSize="8sp"
             android:maxLines="1"
@@ -94,6 +95,15 @@
             android:clickable="true"
             android:focusable="true"/>
 
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/btn_tab" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.4" android:text="Tab" android:textSize="12sp" android:textAllCaps="false" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_alt" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1.1" android:text="Alt" android:textSize="12sp" android:textAllCaps="false" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_dpad_left" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="&#x2190;" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_dpad_up" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="&#x2191;" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_dpad_down" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="&#x2193;" android:layout_margin="1dp"/>
+        <Button android:id="@+id/btn_dpad_right" style="@style/SpecialKeyStyle" android:layout_width="0dp" android:layout_weight="1" android:text="&#x2192;" android:layout_margin="1dp"/>
     </LinearLayout>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
