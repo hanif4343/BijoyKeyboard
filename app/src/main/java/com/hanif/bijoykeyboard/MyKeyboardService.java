@@ -73,6 +73,14 @@ public class MyKeyboardService extends InputMethodService {
     private List<Button> clipboardChipButtons = new ArrayList<>();
     private boolean isG_Pressed = false;
     private boolean isEnglishMode = false;
+    // *** নতুন: বিজয় ক্লাসিক বনাম বিজয় ইউনিকোড ***
+    // শুধু isEnglishMode==false হলেই প্রাসঙ্গিক। false = Classic (আগের/এখনকার আচরণ,
+    // ে/ি/ৈ আগে টাইপ করে বাফার করে রাখা হয়, ব্যঞ্জন পরে চাপলে সঠিক ক্রমে বসে)।
+    // true = Unicode (ব্যঞ্জন আগে, কার-চিহ্ন পরে টাইপ করতে হয় — international logical
+    // order অনুযায়ী; verified: ইউনিকোডে সবসময় ব্যঞ্জন+কার অর্ডারেই টাইপ করা হয়, কখনো
+    // উল্টো না)। কী-লেআউট/ডিজাইন দুটো মোডেই হুবহু একই — শুধু processBengaliLogic()-এর
+    // ি/ে/ৈ হ্যান্ডলিং (section ৮) আলাদা আচরণ করে মোড অনুযায়ী।
+    private boolean isUnicodeMode = false;
     private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
     private long lastShiftTapTime = 0;       // ডাবল ট্যাপ ডিটেকশনের জন্য
 
@@ -89,6 +97,8 @@ public class MyKeyboardService extends InputMethodService {
     private boolean isSymbolMode = false;
     private boolean isEmojiMode = false;
     private boolean isCtrlPressed = false;
+    private boolean isAltPressed = false; // অন-স্ক্রিন Alt টগল বাটনের ভিজ্যুয়াল স্টেট (btnCtrl-এর হুবহু একই প্যাটার্ন)
+    private Button btnAlt;
 
     // কিছু Bluetooth/এক্সটার্নাল কিবোর্ডে Ctrl/Alt কী ছাড়ার (keyUp) ইভেন্টটা মিস হয়ে যায়।
     // তখন সিস্টেম event.isCtrlPressed()/event.isAltPressed() আসলে কী ছাড়ার পরেও
@@ -1116,6 +1126,60 @@ public class MyKeyboardService extends InputMethodService {
                 updateKeyLabels();
             });
         }
+
+        // Tab — টার্গেট অ্যাপের কাছে সরাসরি KEYCODE_TAB পাঠানো হচ্ছে (ফোকাস-নেক্সট/ট্যাব-ইনসার্ট,
+        // অ্যাপ যেভাবে হ্যান্ডল করে সেভাবেই কাজ করবে, ঠিক হার্ডওয়্যার Tab-এর মতো)
+        Button btnTab = keyboardView.findViewById(R.id.btn_tab);
+        if (btnTab != null) {
+            btnTab.setOnClickListener(v -> {
+                doHaptic();
+                InputConnection ic = getCurrentInputConnection();
+                if (ic == null) return;
+                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_TAB, 0));
+                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_TAB, 0));
+            });
+        }
+
+        // Alt — btnCtrl-এর মতোই টগল বাটন, কিন্তু আসল হার্ডওয়্যার Alt-down হ্যান্ডলিং
+        // (onKeyDown) সরাসরি কল করা হচ্ছে যাতে Alt-ডাবল-ট্যাপ ভাষা-টগল, Ctrl+Alt+V/B
+        // মোড-সুইচ ট্র্যাকিং — সবকিছু হুবহু হার্ডওয়্যার Alt-এর মতোই কাজ করে, লজিক
+        // ডুপ্লিকেট না করেই
+        btnAlt = keyboardView.findViewById(R.id.btn_alt);
+        if (btnAlt != null) {
+            btnAlt.setOnClickListener(v -> {
+                onKeyDown(KeyEvent.KEYCODE_ALT_LEFT, new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ALT_LEFT, 0));
+                isAltPressed = !isAltPressed; // শুধু ভিজ্যুয়াল ইন্ডিকেটরের জন্য
+                updateKeyLabels();
+            });
+        }
+
+        // অ্যারো কী — টার্গেট অ্যাপের কাছে DPAD কী-ইভেন্ট পাঠানো হচ্ছে, সাথে বর্তমান
+        // on-screen Shift/Ctrl/Alt টগল অবস্থাগুলো মেটা-ফ্ল্যাগ হিসেবে জুড়ে দেওয়া হচ্ছে —
+        // তাই Shift+Arrow (সিলেকশন), Ctrl+Arrow (শব্দ-লাফ) ইত্যাদি শর্টকাট টার্গেট অ্যাপে
+        // ঠিক হার্ডওয়্যার কিবোর্ডের মতোই কাজ করবে
+        int[] dpadIds = {R.id.btn_dpad_left, R.id.btn_dpad_up, R.id.btn_dpad_down, R.id.btn_dpad_right};
+        int[] dpadCodes = {KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT};
+        for (int di = 0; di < dpadIds.length; di++) {
+            Button btnDpad = keyboardView.findViewById(dpadIds[di]);
+            final int dpadCode = dpadCodes[di];
+            if (btnDpad != null) {
+                btnDpad.setOnClickListener(v -> {
+                    doHaptic();
+                    InputConnection ic = getCurrentInputConnection();
+                    if (ic == null) return;
+                    int meta = 0;
+                    if (isShiftPressed) meta |= KeyEvent.META_SHIFT_ON;
+                    if (isCtrlPressed) meta |= KeyEvent.META_CTRL_ON;
+                    if (isAltPressed) meta |= KeyEvent.META_ALT_ON;
+                    ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, dpadCode, 0, meta));
+                    ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_UP, dpadCode, 0, meta));
+                    boolean needsRefresh = false;
+                    if (isCtrlPressed || isAltPressed) { isCtrlPressed = false; isAltPressed = false; needsRefresh = true; }
+                    if (isShiftPressed && !isCapsLock) { isShiftPressed = false; needsRefresh = true; }
+                    if (needsRefresh) updateKeyLabels();
+                });
+            }
+        }
     }
 
     private void updateKeyLabels() {
@@ -1190,7 +1254,16 @@ public class MyKeyboardService extends InputMethodService {
         }
 
         Button langBtn = keyboardView.findViewById(R.id.btn_lang);
-        if (langBtn != null) langBtn.setText(isEnglishMode ? "Eng" : "বাং");
+        if (langBtn != null) {
+            langBtn.setText(isEnglishMode ? "Eng" : (isUnicodeMode ? "Uni" : "বাং"));
+        }
+
+        // সেটিংস গিয়ার আইকনের পাশের লেবেল — বর্তমান মোড স্পষ্ট অক্ষরে দেখানো হয়
+        // (আগে এখানে স্ট্যাটিক "Bijoy" লেখা ছিল, এখন ডাইনামিক)
+        TextView modeLabel = keyboardView.findViewById(R.id.mode_label);
+        if (modeLabel != null) {
+            modeLabel.setText(isEnglishMode ? "English" : (isUnicodeMode ? "Unicode" : "Classic"));
+        }
 
         View shiftBtn = keyboardView.findViewById(R.id.btn_shift);
         if (shiftBtn != null) {
@@ -1204,6 +1277,10 @@ public class MyKeyboardService extends InputMethodService {
             } else {
                 btnCtrl.setVisibility(View.GONE);
             }
+        }
+
+        if (btnAlt != null) {
+            btnAlt.setAlpha(isAltPressed ? 0.5f : 1.0f);
         }
     }
 
@@ -1655,6 +1732,21 @@ public class MyKeyboardService extends InputMethodService {
         if (ic == null) return;
         if (isEmojiMode) { ic.commitText(getEmoji(tag), 1); return; }
         if (isCtrlPressed) {
+            // Ctrl+Alt+V (Unicode মোড) / Ctrl+Alt+B (Classic মোড) — অন-স্ক্রিন Ctrl ও Alt
+            // দুটো টগলই সক্রিয় থাকা অবস্থায় "v"/"b" চাপলে, হার্ডওয়্যার শর্টকাটের
+            // হুবহু একই আচরণ পুনর্ব্যবহার করা হচ্ছে (applyModeShortcut)
+            if (isAltPressed) {
+                if (tag.equalsIgnoreCase("v")) {
+                    applyModeShortcut(true);
+                    Toast.makeText(this, isEnglishMode ? "English Mode" : "Unicode মোড", Toast.LENGTH_SHORT).show();
+                    isCtrlPressed = false; isAltPressed = false; updateKeyLabels(); return;
+                }
+                if (tag.equalsIgnoreCase("b")) {
+                    applyModeShortcut(false);
+                    Toast.makeText(this, isEnglishMode ? "English Mode" : "Classic মোড", Toast.LENGTH_SHORT).show();
+                    isCtrlPressed = false; isAltPressed = false; updateKeyLabels(); return;
+                }
+            }
             int keyCode = -1;
             switch (tag.toLowerCase()) {
                 case "a": keyCode = KeyEvent.KEYCODE_A; break;
@@ -1664,9 +1756,10 @@ public class MyKeyboardService extends InputMethodService {
                 case "z": keyCode = KeyEvent.KEYCODE_Z; break;
             }
             if (keyCode != -1) {
-                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, KeyEvent.META_CTRL_ON));
-                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, KeyEvent.META_CTRL_ON));
-                isCtrlPressed = false; updateKeyLabels(); return;
+                int metaFlags = KeyEvent.META_CTRL_ON | (isAltPressed ? KeyEvent.META_ALT_ON : 0);
+                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, metaFlags));
+                ic.sendKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, metaFlags));
+                isCtrlPressed = false; isAltPressed = false; updateKeyLabels(); return;
             }
         }
         if (isSymbolMode) {
@@ -1781,10 +1874,19 @@ public class MyKeyboardService extends InputMethodService {
             isG_Pressed = false; return;
         }
 
-        // ── 8. ি (U+09BF) / এ-কার (U+09C7) / ৈ-কার (U+09C8) → pendingVowel
-        // বিজয় নিয়ম: এই তিনটে কার আগে press হয়, ব্যঞ্জন পরে
-        // তাই এখানে pendingVowel এ রেখে দাও — ব্যঞ্জন আসলে section 9 এ flush হবে
+        // ── 8. ি (U+09BF) / এ-কার (U+09C7) / ৈ-কার (U+09C8)
+        // Classic: বিজয় নিয়ম — এই তিনটে কার আগে press হয়, ব্যঞ্জন পরে; তাই pendingVowel
+        // এ রেখে দাও — ব্যঞ্জন আসলে section 9 এ flush হবে।
+        // Unicode: আন্তর্জাতিক স্ট্যান্ডার্ড অনুযায়ী ব্যঞ্জন সবসময় আগে টাইপ হয়, কার পরে —
+        // তাই বাফার করার দরকার নেই, সরাসরি এখনই commit করা হচ্ছে (ব্যঞ্জন ততক্ষণে আগেই
+        // কার্সরের আগে বসে গেছে)। ো/ৌ কম্বিনেশন (ওপরের section ১/২-এ prevChar চেক) এতে
+        // প্রভাবিত হয় না, কারণ সেটা টেক্সট ফিল্ডের প্রকৃত আগের অক্ষর দেখেই কাজ করে।
         if (result.equals("\u09BF") || result.equals("\u09C7") || result.equals("\u09C8")) {
+            if (isUnicodeMode) {
+                if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); pendingVowel = ""; }
+                ic.commitText(result, 1);
+                return;
+            }
             // আগের pending flush করে নতুন pending রাখো
             if (!pendingVowel.isEmpty()) { ic.commitText(pendingVowel, 1); }
             pendingVowel = result;
@@ -1919,9 +2021,9 @@ public class MyKeyboardService extends InputMethodService {
             closeClipboardPanel(); // অন্য কী — ওভারলে বন্ধ করে নিচের স্বাভাবিক প্রসেসিং চালিয়ে যাওয়া হচ্ছে
         }
 
-        // ২. Ctrl + Alt + V ল্যাঙ্গুয়েজ সুইচ (বাংলা/ইংরেজি) / Win + V ক্লিপবোর্ড হিস্টোরি
+        // ২. Ctrl + Alt + V → Unicode মোড ⇄ English (নিচে Ctrl+Alt+B → Classic মোড ⇄ English)
         // Ctrl+Alt+V-এর জন্য এখনও নিজস্ব ট্র্যাকিং (genuineCombo) লাগে — নাহলে stuck
-        // flag-এর কারণে সাধারণ "v" টাইপেও ভাষা পাল্টে যেতে পারে। কিন্তু Win+V-এর জন্য
+        // flag-এর কারণে সাধারণ "v" টাইপেও মোড পাল্টে যেতে পারে। কিন্তু Win+V-এর জন্য
         // (genuineMetaCombo) সরাসরি event.isMetaPressed() ব্যবহার করা হচ্ছে, কারণ Meta
         // কী-এর keyDown ইভেন্টটা নিজেই সিস্টেম-লেভেলে ইন্টারসেপ্ট হয়ে যেতে পারে (ওপরে
         // lastHwCtrlTapTime-এর কমেন্টে বিস্তারিত) — তাই আমাদের নিজস্ব metaKeyDown
@@ -1934,14 +2036,14 @@ public class MyKeyboardService extends InputMethodService {
             boolean genuineMetaCombo = event.isMetaPressed(); // মেটা কী-এর নিজস্ব keyDown সিস্টেম-লেভেলে ইন্টারসেপ্ট হয়ে যেতে পারে (ওপরের কমেন্ট দ্রষ্টব্য), তাই এখানে সরাসরি লাইভ মেটা-স্টেট বিটটাই ব্যবহার করা হচ্ছে
             if (genuineCombo) {
                 if (event.getRepeatCount() == 0) {
-                    toggleLanguageMode();
+                    applyModeShortcut(true); // → Unicode (আগে থেকেই Unicode-এ থাকলে English-এ ফিরবে)
                     ctrlKeyDown = false; altKeyDown = false; // কম্বো একবার ব্যবহার হয়ে গেলে সাথে সাথে ক্লিয়ার করো
-                    Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, isEnglishMode ? "English Mode" : "Unicode মোড", Toast.LENGTH_SHORT).show();
                 }
                 return true;
             } else if (event.isCtrlPressed() && event.isAltPressed()) {
                 // মেটা-ফ্ল্যাগ true থাকলেও আমাদের ট্র্যাকিং অনুযায়ী এটা ইচ্ছাকৃত কম্বো নয়
-                // (leftover/stuck) — তাই ভাষা না বদলে "v" স্বাভাবিকভাবেই টাইপ হবে
+                // (leftover/stuck) — তাই মোড না বদলে "v" স্বাভাবিকভাবেই টাইপ হবে
                 ctrlKeyDown = false; altKeyDown = false;
             } else if (genuineMetaCombo) {
                 // Windows কী + V — ক্লিপবোর্ড হিস্টোরি প্যানেল টগল করা হচ্ছে
@@ -1959,6 +2061,27 @@ public class MyKeyboardService extends InputMethodService {
                 metaKeyDown = false;
             }
         }
+
+        // ২.৫ Ctrl + Alt + B → Classic মোড ⇄ English (Ctrl+Alt+V-এর সাথে হুবহু একই প্যাটার্ন,
+        // শুধু target মোড Classic — genuineCombo-স্টাইল ট্র্যাকিং এখানেও লাগে)
+        if (keyCode == KeyEvent.KEYCODE_B) {
+            long now = System.currentTimeMillis();
+            boolean genuineComboB = event.isCtrlPressed() && event.isAltPressed()
+                    && ctrlKeyDown && (now - ctrlDownAtMs) <= ALT_COMBO_WINDOW_MS
+                    && altKeyDown && (now - altDownAtMs) <= ALT_COMBO_WINDOW_MS;
+            if (genuineComboB) {
+                if (event.getRepeatCount() == 0) {
+                    applyModeShortcut(false); // → Classic (আগে থেকেই Classic-এ থাকলে English-এ ফিরবে)
+                    ctrlKeyDown = false; altKeyDown = false;
+                    Toast.makeText(this, isEnglishMode ? "English Mode" : "Classic মোড", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            } else if (event.isCtrlPressed() && event.isAltPressed()) {
+                // leftover/stuck flag — মোড না বদলে "b" স্বাভাবিকভাবেই টাইপ হবে
+                ctrlKeyDown = false; altKeyDown = false;
+            }
+        }
+
 
         // ৩. অন্যান্য Ctrl ভিত্তিক শর্টকাটগুলোকে সিস্টেমের হাতে ছেড়ে দেওয়া (Ctrl+C, Ctrl+V, Ctrl+A ইত্যাদি)
         if (event.isCtrlPressed()) {
@@ -2184,11 +2307,38 @@ public class MyKeyboardService extends InputMethodService {
         isG_Pressed = false;
     }
 
-    // ভাষা টগল করার একমাত্র কেন্দ্রীয় জায়গা — টাচ (btn_lang), Ctrl+Alt+V, এবং
-    // হার্ডওয়্যার ডাবল-ট্যাপ (Alt Alt) তিনটাই এখন এই একই মেথড কল করে, যাতে ভবিষ্যতে
-    // কোথাও একটা পথ ঠিক করলে অন্যগুলো বাদ পড়ে না যায়
+    // ভাষা টগল করার একমাত্র কেন্দ্রীয় জায়গা — টাচ (btn_lang), Alt-ডাবল-ট্যাপ তিনটাই
+    // এই একই মেথড কল করে। এখন তিনটা মোডের মধ্যে সাইকেল করে:
+    // English → Classic → Unicode → English → ...
     private void toggleLanguageMode() {
-        isEnglishMode = !isEnglishMode;
+        if (isEnglishMode) {
+            isEnglishMode = false;
+            isUnicodeMode = false; // → Classic
+        } else if (!isUnicodeMode) {
+            isUnicodeMode = true;  // Classic → Unicode
+        } else {
+            isEnglishMode = true;
+            isUnicodeMode = false; // Unicode → English
+        }
+        isSymbolMode = false;
+        isEmojiMode = false;
+        resetStates();
+        updateKeyLabels();
+    }
+
+    // Ctrl+Alt+B (Classic ⇄ English) আর Ctrl+Alt+V (Unicode ⇄ English) — দুটো
+    // হার্ডওয়্যার শর্টকাটই এই একই মেথড কল করে, শুধু target মোড আলাদা। যেকোনো
+    // অবস্থা থেকেই কল করা যায়: এখন যদি ইতিমধ্যে সেই target মোডে থাকা হয়, তাহলে
+    // English-এ ফিরে যাবে; নাহলে সরাসরি সেই target মোডে চলে যাবে (মাঝখানে অন্য
+    // মোড থাকলেও)। যেমন: Unicode মোডে থাকা অবস্থায় Ctrl+Alt+B চাপলে সরাসরি Classic-এ চলে যাবে।
+    private void applyModeShortcut(boolean targetIsUnicode) {
+        boolean alreadyInTarget = !isEnglishMode && (isUnicodeMode == targetIsUnicode);
+        if (alreadyInTarget) {
+            isEnglishMode = true;
+        } else {
+            isEnglishMode = false;
+            isUnicodeMode = targetIsUnicode;
+        }
         isSymbolMode = false;
         isEmojiMode = false;
         resetStates();
