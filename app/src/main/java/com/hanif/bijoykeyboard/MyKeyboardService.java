@@ -118,15 +118,10 @@ public class MyKeyboardService extends InputMethodService {
     private long ctrlDownAtMs = 0L;
     private static final long ALT_COMBO_WINDOW_MS = 1200;
 
-    // Ctrl+Alt+V একসাথে তিনটে কী ঠিকমতো সিঙ্ক্রোনাইজ হওয়ার ওপর নির্ভর করে — কিছু
-    // ব্লুটুথ/এক্সটার্নাল কিবোর্ডে (যেখানে key-up ইভেন্ট প্রায়ই মিস হয়) এটা এখনও
-    // অনির্ভরযোগ্য থেকে যেতে পারে। তাই আরেকটা, অনেক বেশি স্থিতিশীল বিকল্প রাখা হলো:
-    // শুধু একটামাত্র কী — ডান/বাম Alt-এ পরপর দুইবার (৪০০ms-এর মধ্যে) চাপলেই ভাষা
-    // বদলে যাবে। এখানে সিঙ্ক্রোনাইজেশনের কোনো ঝামেলা নেই (একটাই কী ট্র্যাক করতে হয়),
-    // তাই এটা কাজ করবে এমনকি যেসব কিবোর্ডে Ctrl+Alt+V ধারাবাহিকভাবে ব্যর্থ হয় সেখানেও।
-    // Ctrl চাপা থাকা অবস্থায় (অর্থাৎ Ctrl+Alt+V কম্বোর অংশ হিসেবে Alt চাপা হলে) এই
-    // ডাবল-ট্যাপ ট্রিগার সক্রিয় হয় না, যাতে দুটো শর্টকাট একে অপরের সাথে গুলিয়ে না যায়।
-    private long lastHwAltTapTime = 0L;
+    // *** ডাবল-ট্যাপ Alt দিয়ে ভাষা টগল ফিচার সরিয়ে দেওয়া হয়েছে (ইউজারের অনুরোধে) —
+    // এটা Ctrl+Alt+V/B কম্বোর সাথে মাঝেমধ্যে গুলিয়ে যাচ্ছিল। এখন Ctrl+Alt+V (Unicode)
+    // আর Ctrl+Alt+B (Classic) — এই দুটোই একমাত্র/বাধ্যতামূলক হার্ডওয়্যার শর্টকাট।
+    // HW_LANG_DOUBLE_TAP_MS কনস্ট্যান্টটা এখনও Ctrl-ডাবল-ট্যাপ-ক্লিপবোর্ড ফিচারে ব্যবহৃত হয়।
     private static final long HW_LANG_DOUBLE_TAP_MS = 400;
 
     // *** Win+V কেন "কিছুই হয় না" হতে পারে — মূল কারণ ***
@@ -220,6 +215,40 @@ public class MyKeyboardService extends InputMethodService {
         keySoundEnabled = settingsPrefs.getBoolean("key_sound", false);
         vibrationEnabled = settingsPrefs.getBoolean("vibration_enabled", true);
         vibrationStrengthPercent = settingsPrefs.getInt("vibration_strength", 60);
+        // *** নতুন: সবশেষ ব্যবহৃত মোড (English/Classic/Unicode) মনে রাখা ***
+        // ইউজারের অনুরোধ: Classic-এ হাত পাকা হয়ে গেছে, কিন্তু Unicode এখনো practice করছেন —
+        // তাই যে মোডে রেখে বের হবেন, পরের বার কিবোর্ড খুললে/ফিল্ড পাল্টালে সেই মোডেই
+        // যেন থাকে, প্রতিবার Classic-এ রিসেট না হয়ে যায়।
+        isEnglishMode = settingsPrefs.getBoolean("mode_english", false);
+        isUnicodeMode = settingsPrefs.getBoolean("mode_unicode", false);
+    }
+
+    // toggleLanguageMode() আর applyModeShortcut()-এর শেষে কল হয় — মোড বদলানোর সাথে
+    // সাথেই ডিস্কে সেভ হয়ে যায়, যাতে কিবোর্ড বন্ধ/রিস্টার্ট হলেও (অন্য অ্যাপে গেলে,
+    // ফোন রিস্টার্ট হলেও) সবশেষ মোডটাই ফিরে আসে
+    private void saveLanguageMode() {
+        if (settingsPrefs == null) return;
+        settingsPrefs.edit()
+                .putBoolean("mode_english", isEnglishMode)
+                .putBoolean("mode_unicode", isUnicodeMode)
+                .apply();
+    }
+
+    // ══════════════════════════════════════
+    // এক্সটার্নাল কিবোর্ড দিয়ে দৈনিক শব্দ-টাইপিং ট্র্যাকিং (Settings-এ দেখা যাবে)
+    // ══════════════════════════════════════
+    // শুধু হার্ডওয়্যার কিবোর্ডের Space চাপাকেই "শব্দ শেষ" হিসেবে গণনা করা হচ্ছে
+    // (on-screen টাচ কিবোর্ডের handleOnScreenKey() থেকে এটা কল হয় না) — যেহেতু
+    // ব্যবহারকারী নির্দিষ্টভাবে এক্সটার্নাল কিবোর্ডে প্র্যাকটিসের হিসাব চেয়েছেন।
+    // এটা একটা সরল আনুমানিক গণনা (প্রতিটা Space = ১ শব্দ), নিখুঁত ভাষাতাত্ত্বিক
+    // শব্দ-সীমানা নির্ণয় না — প্র্যাকটিসের progress বোঝার জন্য যথেষ্ট।
+    // "typing_stats" নামের আলাদা SharedPreferences-এ তারিখ-ভিত্তিক কী (yyyy-MM-dd)
+    // দিয়ে সেভ হয়, SettingsActivity একই ফাইল থেকে পড়ে লিস্ট বানায়।
+    private void recordWordTypedViaHardware() {
+        String today = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
+        SharedPreferences statsPrefs = getSharedPreferences("typing_stats", MODE_PRIVATE);
+        int current = statsPrefs.getInt(today, 0);
+        statsPrefs.edit().putInt(today, current + 1).apply();
     }
 
     // *** এক্সটার্নাল কিবোর্ড + "Show on-screen keyboard" সেটিংস অফ থাকার আসল সমাধান ***
@@ -1258,11 +1287,22 @@ public class MyKeyboardService extends InputMethodService {
             langBtn.setText(isEnglishMode ? "Eng" : (isUnicodeMode ? "Uni" : "বাং"));
         }
 
-        // সেটিংস গিয়ার আইকনের পাশের লেবেল — বর্তমান মোড স্পষ্ট অক্ষরে দেখানো হয়
-        // (আগে এখানে স্ট্যাটিক "Bijoy" লেখা ছিল, এখন ডাইনামিক)
+        // সেটিংস গিয়ার আইকনের পাশের লেবেল — বর্তমান মোড স্পষ্ট অক্ষরে ও আলাদা আলাদা
+        // রঙে দেখানো হয়, যাতে এক নজরেই বোঝা যায় কোন মোডে আছেন — বোল্ড + প্রতিটা
+        // মোডের জন্য ভিন্ন উজ্জ্বল রঙ (dark background-এও স্পষ্ট দেখা যাবে)
         TextView modeLabel = keyboardView.findViewById(R.id.mode_label);
         if (modeLabel != null) {
-            modeLabel.setText(isEnglishMode ? "English" : (isUnicodeMode ? "Unicode" : "Classic"));
+            if (isEnglishMode) {
+                modeLabel.setText("English");
+                modeLabel.setTextColor(0xFF60A5FA); // নীল
+            } else if (isUnicodeMode) {
+                modeLabel.setText("Unicode");
+                modeLabel.setTextColor(0xFF34D399); // সবুজ
+            } else {
+                modeLabel.setText("Classic");
+                modeLabel.setTextColor(0xFFFBBF24); // অ্যাম্বার/কমলা
+            }
+            modeLabel.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         }
 
         View shiftBtn = keyboardView.findViewById(R.id.btn_shift);
@@ -1281,6 +1321,14 @@ public class MyKeyboardService extends InputMethodService {
 
         if (btnAlt != null) {
             btnAlt.setAlpha(isAltPressed ? 0.5f : 1.0f);
+        }
+
+        // Tab/Alt/অ্যারো সারিটা সবসময় দেখানো হবে না — জায়গা বাঁচাতে এটা শুধু "123"
+        // (সিম্বল মোড) চাপলেই দেখা যাবে, নাহলে GONE থাকবে (position/order অপরিবর্তিত,
+        // শুধু visibility টগল হচ্ছে — ঠিক btnCtrl-এর মতোই প্যাটার্ন)
+        View navRow = keyboardView.findViewById(R.id.nav_row);
+        if (navRow != null) {
+            navRow.setVisibility(isSymbolMode ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -1961,25 +2009,14 @@ public class MyKeyboardService extends InputMethodService {
             return super.onKeyDown(keyCode, event);
         }
         if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+            // *** ডাবল-ট্যাপ Alt দিয়ে ভাষা টগল ফিচারটা সরিয়ে দেওয়া হলো (ইউজারের অনুরোধে) ***
+            // এটা Ctrl+Alt+V/B কম্বোর সাথে মাঝেমধ্যে গুলিয়ে যাচ্ছিল/সমস্যা করছিল। এখন
+            // Ctrl+Alt+V (Unicode) আর Ctrl+Alt+B (Classic) — এই দুটোই একমাত্র/বাধ্যতামূলক
+            // হার্ডওয়্যার শর্টকাট। নিচের altKeyDown/altDownAtMs ট্র্যাকিং অক্ষত রাখা হলো,
+            // কারণ সেটা এখনও Ctrl+Alt+V/B কম্বো ডিটেকশনের জন্য দরকার।
             if (event.getRepeatCount() == 0) {
-                long now = System.currentTimeMillis();
-                // Ctrl চাপা না থাকলেই শুধু ডাবল-ট্যাপ ট্রিগার সক্রিয় — নাহলে Ctrl+Alt+V
-                // কম্বোর প্রথম Alt-চাপাটাও ভুলবশত ভাষা টগল করে ফেলতে পারত
-                // একই ফিক্স এখানেও — stuck ctrlKeyDown যেন Alt-ডাবল-ট্যাপ (ভাষা টগল) ব্লক
-                // না করে, তাই ctrlDownAtMs দিয়ে "সত্যিই এইমাত্র চাপা হয়েছে কিনা" যাচাই
-                boolean ctrlRecentlyHeld = ctrlKeyDown && (now - ctrlDownAtMs) <= ALT_COMBO_WINDOW_MS;
-                if (!ctrlRecentlyHeld) {
-                    boolean doubleTap = (now - lastHwAltTapTime) < HW_LANG_DOUBLE_TAP_MS;
-                    if (doubleTap) {
-                        toggleLanguageMode();
-                        lastHwAltTapTime = 0; // তিন/চারবার পরপর ট্যাপ করলে যেন বারবার টগল না হয়
-                        Toast.makeText(this, isEnglishMode ? "English Mode" : "বাংলা মোড", Toast.LENGTH_SHORT).show();
-                        altKeyDown = true; altDownAtMs = now;
-                        return true;
-                    }
-                    lastHwAltTapTime = now;
-                }
-                altKeyDown = true; altDownAtMs = now;
+                altKeyDown = true;
+                altDownAtMs = System.currentTimeMillis();
             }
             return super.onKeyDown(keyCode, event);
         }
@@ -2099,6 +2136,7 @@ public class MyKeyboardService extends InputMethodService {
             ic.commitText(" ", 1);
             ic.deleteSurroundingText(1, 0);
             isG_Pressed = false;
+            recordWordTypedViaHardware();
             return true;
         }
 
@@ -2107,6 +2145,7 @@ public class MyKeyboardService extends InputMethodService {
             pendingVowel = "";
             ic.commitText(" ", 1);
             isG_Pressed = false;
+            recordWordTypedViaHardware();
             return true;
         }
 
@@ -2324,6 +2363,7 @@ public class MyKeyboardService extends InputMethodService {
         isEmojiMode = false;
         resetStates();
         updateKeyLabels();
+        saveLanguageMode();
     }
 
     // Ctrl+Alt+B (Classic ⇄ English) আর Ctrl+Alt+V (Unicode ⇄ English) — দুটো
@@ -2343,6 +2383,7 @@ public class MyKeyboardService extends InputMethodService {
         isEmojiMode = false;
         resetStates();
         updateKeyLabels();
+        saveLanguageMode();
     }
 
     private boolean isBengaliKar(String s) {
