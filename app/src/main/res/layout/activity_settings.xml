@@ -257,6 +257,51 @@
                 android:thumbTint="#3B82F6"/>
         </LinearLayout>
 
+        <!-- ── এক্সটার্নাল কিবোর্ড টাইপিং স্ট্যাটস ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⌨️  দৈনিক টাইপিং (এক্সটার্নাল কিবোর্ড)"
+                android:textColor="#F1F5F9"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="প্রতিদিন আনুমানিক কতগুলো শব্দ টাইপ করলেন (স্পেস গণনা করে হিসাব করা, নিখুঁত না)"
+                android:textColor="#64748B"
+                android:textSize="11sp"
+                android:layout_marginBottom="12dp"/>
+
+            <LinearLayout
+                android:id="@+id/stats_list_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="10dp"/>
+
+            <Button
+                android:id="@+id/btn_clear_stats"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:text="স্ট্যাটস মুছে ফেলুন"
+                android:textColor="#FCA5A5"
+                android:textSize="12sp"
+                android:textAllCaps="false"
+                android:backgroundTint="#3F1D1D"
+                android:stateListAnimator="@null"/>
+        </LinearLayout>
+
         <!-- ── ডিকশনারি ── -->
         <LinearLayout
             android:layout_width="match_parent"
