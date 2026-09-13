@@ -22,8 +22,15 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import android.widget.LinearLayout;
 
 // কিবোর্ডের সব কাস্টমাইজেশন (থিম, হাইট, কী সাউন্ড, ভাইব্রেশন, ডিকশনারি ইমপোর্ট/এক্সপোর্ট) এখান থেকে
 // নিয়ন্ত্রণ করা হয়। MyKeyboardService.java একই SharedPreferences ("kb_settings" এবং "word_freq")
@@ -33,6 +40,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private static final String SETTINGS_PREFS = "kb_settings";
     private static final String DICT_PREFS = "word_freq";
+    private static final String STATS_PREFS = "typing_stats";
     private static final int REQ_EXPORT = 101;
     private static final int REQ_IMPORT = 102;
 
@@ -49,6 +57,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupThemeSection();
         setupHeightSection();
         setupSoundVibrationSection();
+        setupTypingStatsSection();
         setupDictionarySection();
     }
 
@@ -153,6 +162,76 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void updateVibrationLabel(int percent) {
         if (tvVibrationValue != null) tvVibrationValue.setText(percent + "%");
+    }
+
+    // ══════════════════════════════════════
+    // এক্সটার্নাল কিবোর্ড দিয়ে দৈনিক টাইপিং স্ট্যাটস
+    // ══════════════════════════════════════
+    // MyKeyboardService.java-এর recordWordTypedViaHardware() একই "typing_stats"
+    // SharedPreferences-এ তারিখ (yyyy-MM-dd) কী দিয়ে শব্দ-সংখ্যা জমা করে; এখানে শুধু
+    // সেটা পড়ে সাম্প্রতিক তারিখ থেকে পুরনো তারিখের ক্রমে (নতুন আগে) লিস্ট আকারে দেখানো হচ্ছে।
+    private void setupTypingStatsSection() {
+        refreshTypingStats();
+
+        Button btnClearStats = findViewById(R.id.btn_clear_stats);
+        if (btnClearStats != null) {
+            btnClearStats.setOnClickListener(v -> {
+                getSharedPreferences(STATS_PREFS, MODE_PRIVATE).edit().clear().apply();
+                refreshTypingStats();
+                Toast.makeText(this, "টাইপিং স্ট্যাটস মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show();
+            });
+        }
+    }
+
+    private void refreshTypingStats() {
+        LinearLayout container = findViewById(R.id.stats_list_container);
+        if (container == null) return;
+        container.removeAllViews();
+
+        Map<String, ?> all = getSharedPreferences(STATS_PREFS, MODE_PRIVATE).getAll();
+        List<String> dates = new ArrayList<>();
+        for (String key : all.keySet()) dates.add(key);
+        Collections.sort(dates, Collections.reverseOrder()); // yyyy-MM-dd ফরম্যাট বলে string sort-ই তারিখ অনুযায়ী নতুন-আগে ক্রম দেয়
+
+        if (dates.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("এখনো কোনো ডেটা নেই — এক্সটার্নাল কিবোর্ড দিয়ে টাইপ শুরু করলে এখানে দেখা যাবে");
+            empty.setTextColor(0xFF64748B);
+            empty.setTextSize(12);
+            container.addView(empty);
+            return;
+        }
+
+        String todayKey = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        for (String date : dates) {
+            Object val = all.get(date);
+            int count = (val instanceof Integer) ? (Integer) val : 0;
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowParams.setMargins(0, 0, 0, 6);
+            row.setLayoutParams(rowParams);
+
+            TextView dateView = new TextView(this);
+            dateView.setText(date.equals(todayKey) ? date + " (আজ)" : date);
+            dateView.setTextColor(0xFFCBD5E1);
+            dateView.setTextSize(13);
+            LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            dateView.setLayoutParams(dateParams);
+
+            TextView countView = new TextView(this);
+            countView.setText(count + " শব্দ");
+            countView.setTextColor(0xFF60A5FA);
+            countView.setTextSize(13);
+            countView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+            row.addView(dateView);
+            row.addView(countView);
+            container.addView(row);
+        }
     }
 
     // ══════════════════════════════════════
