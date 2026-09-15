@@ -81,6 +81,9 @@ public class MyKeyboardService extends InputMethodService {
     // উল্টো না)। কী-লেআউট/ডিজাইন দুটো মোডেই হুবহু একই — শুধু processBengaliLogic()-এর
     // ি/ে/ৈ হ্যান্ডলিং (section ৮) আলাদা আচরণ করে মোড অনুযায়ী।
     private boolean isUnicodeMode = false;
+    // Settings থেকে নিয়ন্ত্রিত — কোন মোড(গুলো) সাইকেল/শর্টকাটে পাওয়া যাবে (loadSettings() দ্রষ্টব্য)
+    private boolean classicEnabled = true;
+    private boolean unicodeEnabled = true;
     private boolean isCapsLock = false;      // শুধু ইংরেজি মোডে সক্রিয় থাকে — Shift-এ ডাবল ট্যাপ করলে অন হয়
     private long lastShiftTapTime = 0;       // ডাবল ট্যাপ ডিটেকশনের জন্য
 
@@ -143,6 +146,24 @@ public class MyKeyboardService extends InputMethodService {
     // সংরক্ষিত না, তাই এটা সবসময় অ্যাপ পর্যন্ত পৌঁছানো উচিত। Alt চাপা থাকা অবস্থায়
     // (Ctrl+Alt+V কম্বোর অংশ হিসেবে Ctrl চাপা হলে) এই ডাবল-ট্যাপ সক্রিয় হয় না।
     private long lastHwCtrlTapTime = 0L;
+
+    // ══════════════════════════════════════
+    // Alt + নিউমেরিক-কীপ্যাড কোড (Windows-স্টাইল "Alt code") — যেমন Alt+0151 = — (em dash)
+    // ══════════════════════════════════════
+    // Windows-এর দুটো আলাদা কনভেনশন আছে, আর দুটোই সম্পূর্ণ ভিন্ন character table থেকে আসে:
+    //  ১) Alt + 0ddd (leading zero, ৪ অঙ্ক) → Windows-1252/ANSI কোডপেজ — em dash, en dash,
+    //     smart quotes, °, ©, ®, ™, ½, ¼, ×, ÷ ইত্যাদি প্র্যাকটিক্যাল চিহ্ন এখানে পাওয়া যায়।
+    //  ২) Alt + ddd (leading zero ছাড়া) → পুরনো DOS/OEM কোডপেজ 437 — √ (Alt+251), π (227),
+    //     Σ (228), ∞ (236), ≡ (240), ≤/≥ (243/242), ° (248) ইত্যাদি গণিত চিহ্ন এখানে।
+    // দুটো টেবিলই সম্পূর্ণ স্বাধীন — একই সংখ্যা দুটো টেবিলে ভিন্ন চিহ্ন দিতে পারে।
+    // শুধুমাত্র নিউমেরিক-কীপ্যাডের (KEYCODE_NUMPAD_0-9) ডিজিটই গণনা করা হয় — ওপরের
+    // সংখ্যার সারি না, ঠিক Windows-এর মূল নিয়ম অনুযায়ী (এই কিবোর্ডে ডান পাশে আলাদা
+    // নিউমেরিক কীপ্যাড আছে বলে নিশ্চিত হয়ে এই সিদ্ধান্ত)।
+    // Ctrl চাপা অবস্থায় (Ctrl+Alt+V/B কম্বোর অংশ হিসেবে Alt চাপা হলে) এই বাফারিং সক্রিয়
+    // হয় না, যাতে দুটো ফিচার একে অপরের সাথে না গুলিয়ে যায়। বাফারিং চলাকালীন
+    // ডিজিট-ছাড়া অন্য কোনো কী চাপলে (যেমন হঠাৎ Ctrl বা কোনো অক্ষর) বাফারটা বাতিল হয়ে যায়।
+    private boolean altCodeActive = false;
+    private final StringBuilder altCodeBuffer = new StringBuilder();
 
     // পাসওয়ার্ড ফিল্ডে থাকলে suggestion/adaptive learning সম্পূর্ণ বন্ধ থাকবে (প্রাইভেসি)
     private boolean isPasswordField = false;
@@ -221,6 +242,21 @@ public class MyKeyboardService extends InputMethodService {
         // যেন থাকে, প্রতিবার Classic-এ রিসেট না হয়ে যায়।
         isEnglishMode = settingsPrefs.getBoolean("mode_english", false);
         isUnicodeMode = settingsPrefs.getBoolean("mode_unicode", false);
+
+        // *** নতুন: Settings থেকে Classic/Unicode আলাদা করে অন/অফ ***
+        // ডিফল্ট দুটোই true (চালু) — ইউজার Settings-এ গিয়ে যেকোনোটা বন্ধ করতে পারবেন।
+        // বন্ধ থাকা মোড ভাষা-টগল সাইকেল (toggleLanguageMode) আর Ctrl+Alt+V/B শর্টকাট
+        // (applyModeShortcut) — দুই জায়গা থেকেই বাদ পড়বে।
+        classicEnabled = settingsPrefs.getBoolean("classic_enabled", true);
+        unicodeEnabled = settingsPrefs.getBoolean("unicode_enabled", true);
+
+        // এইমাত্র লোড হওয়া সেটিংসে বর্তমান মোডটাই যদি বন্ধ থাকে (যেমন Classic মোডে
+        // থাকা অবস্থায় ইউজার Settings-এ গিয়ে Classic বন্ধ করে দিলেন), তাহলে জোর করে
+        // English-এ ফিরিয়ে আনা হচ্ছে — নাহলে একটা "বন্ধ" মোডেই আটকে থাকতে পারতেন
+        if (!isEnglishMode) {
+            if (isUnicodeMode && !unicodeEnabled) { isEnglishMode = true; isUnicodeMode = false; }
+            else if (!isUnicodeMode && !classicEnabled) { isEnglishMode = true; }
+        }
     }
 
     // toggleLanguageMode() আর applyModeShortcut()-এর শেষে কল হয় — মোড বদলানোর সাথে
@@ -1169,15 +1205,17 @@ public class MyKeyboardService extends InputMethodService {
             });
         }
 
-        // Alt — btnCtrl-এর মতোই টগল বাটন, কিন্তু আসল হার্ডওয়্যার Alt-down হ্যান্ডলিং
-        // (onKeyDown) সরাসরি কল করা হচ্ছে যাতে Alt-ডাবল-ট্যাপ ভাষা-টগল, Ctrl+Alt+V/B
-        // মোড-সুইচ ট্র্যাকিং — সবকিছু হুবহু হার্ডওয়্যার Alt-এর মতোই কাজ করে, লজিক
-        // ডুপ্লিকেট না করেই
+        // Alt — btnCtrl-এর মতোই টগল বাটন। আগে এখান থেকে সরাসরি onKeyDown(ALT_LEFT)
+        // কল করা হতো (Alt-ডাবল-ট্যাপ ভাষা-টগল ফিচারের জন্য) — সেই ফিচার এখন সরিয়ে
+        // দেওয়া হয়েছে, আর যেহেতু এই টগলে কোনো matching key-up ইভেন্ট আসে না, তাই সেই
+        // কল রেখে দিলে altCodeActive (নতুন Alt-কোড ফিচার) স্টাক true থেকে যেত এবং
+        // পরবর্তী হার্ডওয়্যার নিউমেরিক-কীপ্যাড ডিজিট ভুলভাবে বাফারে ধরে ফেলত। তাই এখন
+        // শুধু isAltPressed (ভিজ্যুয়াল + on-screen Ctrl+Alt+V/B কম্বো/অ্যারো-মেটা-ফ্ল্যাগের
+        // জন্য) টগল করা হচ্ছে, হার্ডওয়্যার altKeyDown/altCodeActive-এ হাত দেওয়া হচ্ছে না।
         btnAlt = keyboardView.findViewById(R.id.btn_alt);
         if (btnAlt != null) {
             btnAlt.setOnClickListener(v -> {
-                onKeyDown(KeyEvent.KEYCODE_ALT_LEFT, new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ALT_LEFT, 0));
-                isAltPressed = !isAltPressed; // শুধু ভিজ্যুয়াল ইন্ডিকেটরের জন্য
+                isAltPressed = !isAltPressed;
                 updateKeyLabels();
             });
         }
@@ -2017,8 +2055,29 @@ public class MyKeyboardService extends InputMethodService {
             if (event.getRepeatCount() == 0) {
                 altKeyDown = true;
                 altDownAtMs = System.currentTimeMillis();
+                // Ctrl চাপা না থাকলেই Alt-কোড বাফারিং শুরু — Ctrl চাপা থাকলে এটা
+                // নিশ্চয়ই Ctrl+Alt+V/B কম্বোর অংশ, Alt-কোড না
+                altCodeActive = !ctrlKeyDown;
+                altCodeBuffer.setLength(0);
             }
             return super.onKeyDown(keyCode, event);
+        }
+        // Alt চাপা থাকা অবস্থায় নিউমেরিক-কীপ্যাডের ডিজিট চাপলে — Alt-কোড বাফারে যোগ
+        // করা হচ্ছে, স্বাভাবিক ডিজিট-টাইপিং হিসেবে কমিট করা হচ্ছে না (return true দিয়ে
+        // consume করা হচ্ছে)। Alt সক্রিয় না থাকলে (altCodeActive==false) এই ব্লক
+        // স্কিপ হয়ে যায়, তাই স্বাভাবিক নিউমেরিক-কীপ্যাড টাইপিং অক্ষত থাকে।
+        if (altCodeActive && keyCode >= KeyEvent.KEYCODE_NUMPAD_0 && keyCode <= KeyEvent.KEYCODE_NUMPAD_9) {
+            if (altCodeBuffer.length() < 4) { // Windows-এও সর্বোচ্চ ৪ অঙ্ক (0ddd) ব্যবহৃত হয়
+                altCodeBuffer.append((char) ('0' + (keyCode - KeyEvent.KEYCODE_NUMPAD_0)));
+            }
+            return true;
+        }
+        // Alt-কোড বাফারিং চলাকালীন ডিজিট ছাড়া অন্য কোনো কী চাপলে (Ctrl+Alt+V/B কম্বোর
+        // জন্য Ctrl, বা হঠাৎ অন্য অক্ষর) — বাফারটা বাতিল করা হচ্ছে, যাতে অসম্পূর্ণ/ভুল
+        // কোড পরে Alt ছাড়ার সময় ভুল চিহ্ন কমিট না করে ফেলে
+        if (altCodeActive && keyCode != KeyEvent.KEYCODE_ALT_LEFT && keyCode != KeyEvent.KEYCODE_ALT_RIGHT) {
+            altCodeActive = false;
+            altCodeBuffer.setLength(0);
         }
         // Windows/মেটা কী নিজেই চাপা হলে — Ctrl/Alt-এর মতোই শুধু আসল down-এ ট্র্যাক করা হচ্ছে,
         // যাতে stuck মেটা-স্টেটের কারণে সাধারণ "v" টাইপে ভুলবশত ক্লিপবোর্ড প্যানেল খুলে না যায়
@@ -2212,10 +2271,203 @@ public class MyKeyboardService extends InputMethodService {
             ctrlKeyDown = false;
         } else if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
             altKeyDown = false;
+            resolveAltCodeOnRelease();
         } else if (keyCode == KeyEvent.KEYCODE_META_LEFT || keyCode == KeyEvent.KEYCODE_META_RIGHT) {
             metaKeyDown = false;
         }
         return super.onKeyUp(keyCode, event);
+    }
+
+    // Alt ছাড়ার মুহূর্তে বাফারে জমা ডিজিট থেকে চিহ্নটা রিজলভ করে কমিট করা হচ্ছে।
+    // leading zero ('0' দিয়ে শুরু) থাকলে Windows-1252/ANSI টেবিল, নাহলে DOS/OEM
+    // কোডপেজ 437 টেবিল থেকে লুকআপ করা হয় — ঠিক Windows-এর নিয়ম অনুযায়ী।
+    private void resolveAltCodeOnRelease() {
+        if (!altCodeActive) return;
+        altCodeActive = false;
+        String buffer = altCodeBuffer.toString();
+        altCodeBuffer.setLength(0);
+        if (buffer.isEmpty()) return;
+
+        Character resolved = null;
+        try {
+            if (buffer.startsWith("0") && buffer.length() > 1) {
+                int code = Integer.parseInt(buffer.substring(1));
+                resolved = windows1252Char(code);
+            } else {
+                int code = Integer.parseInt(buffer);
+                resolved = cp437Char(code);
+            }
+        } catch (NumberFormatException ignored) {
+            // অসম্পূর্ণ/অবৈধ সংখ্যা — কিছুই কমিট হবে না
+        }
+
+        if (resolved != null) {
+            InputConnection ic = getCurrentInputConnection();
+            if (ic != null) {
+                // Classic মোডে কোনো কার-চিহ্ন বাফারে আটকে থাকলে (যেমন ে চাপা হয়েছে, ব্যঞ্জনের
+                // অপেক্ষায়) সেটা চুপচাপ হারিয়ে না গিয়ে আগে commit হয়ে যাক, তারপর Alt-কোড চিহ্নটা
+                if (!pendingVowel.isEmpty()) {
+                    ic.commitText(pendingVowel, 1);
+                    pendingVowel = "";
+                }
+                isG_Pressed = false;
+                ic.commitText(String.valueOf(resolved.charValue()), 1);
+            }
+        }
+    }
+
+    // Windows-1252 (ANSI) কোডপেজ — Alt+0128 থেকে Alt+0255। 160-255 রেঞ্জ ISO-8859-1
+    // (Latin-1)-এর সাথে হুবহু মেলে; 128-159 রেঞ্জ Windows-নির্দিষ্ট এক্সটেনশন
+    // (em dash, smart quotes, €, ™ ইত্যাদি) — Microsoft/Adobe-এর অফিসিয়াল রেফারেন্স
+    // টেবিল যাচাই করে বসানো হয়েছে।
+    private Character windows1252Char(int code) {
+        switch (code) {
+            case 128: return '\u20AC'; // €
+            case 130: return '\u201A'; // ‚
+            case 131: return '\u0192'; // ƒ
+            case 132: return '\u201E'; // „
+            case 133: return '\u2026'; // …
+            case 134: return '\u2020'; // †
+            case 135: return '\u2021'; // ‡
+            case 136: return '\u02C6'; // ˆ
+            case 137: return '\u2030'; // ‰
+            case 138: return '\u0160'; // Š
+            case 139: return '\u2039'; // ‹
+            case 140: return '\u0152'; // Œ
+            case 142: return '\u017D'; // Ž
+            case 145: return '\u2018'; // '
+            case 146: return '\u2019'; // '
+            case 147: return '\u201C'; // "
+            case 148: return '\u201D'; // "
+            case 149: return '\u2022'; // •
+            case 150: return '\u2013'; // – en dash
+            case 151: return '\u2014'; // — em dash
+            case 152: return '\u02DC'; // ˜
+            case 153: return '\u2122'; // ™
+            case 154: return '\u0161'; // š
+            case 155: return '\u203A'; // ›
+            case 156: return '\u0153'; // œ
+            case 158: return '\u017E'; // ž
+            case 159: return '\u0178'; // Ÿ
+            case 160: return '\u00A0'; // nbsp
+            case 161: return '\u00A1'; // ¡
+            case 162: return '\u00A2'; // ¢
+            case 163: return '\u00A3'; // £
+            case 164: return '\u00A4'; // ¤
+            case 165: return '\u00A5'; // ¥
+            case 166: return '\u00A6'; // ¦
+            case 167: return '\u00A7'; // §
+            case 168: return '\u00A8'; // ¨
+            case 169: return '\u00A9'; // ©
+            case 170: return '\u00AA'; // ª
+            case 171: return '\u00AB'; // «
+            case 172: return '\u00AC'; // ¬
+            case 173: return '\u00AD'; // soft hyphen
+            case 174: return '\u00AE'; // ®
+            case 175: return '\u00AF'; // ¯
+            case 176: return '\u00B0'; // °
+            case 177: return '\u00B1'; // ±
+            case 178: return '\u00B2'; // ²
+            case 179: return '\u00B3'; // ³
+            case 180: return '\u00B4'; // ´
+            case 181: return '\u00B5'; // µ
+            case 182: return '\u00B6'; // ¶
+            case 183: return '\u00B7'; // ·
+            case 184: return '\u00B8'; // ¸
+            case 185: return '\u00B9'; // ¹
+            case 186: return '\u00BA'; // º
+            case 187: return '\u00BB'; // »
+            case 188: return '\u00BC'; // ¼
+            case 189: return '\u00BD'; // ½
+            case 190: return '\u00BE'; // ¾
+            case 191: return '\u00BF'; // ¿
+            case 192: return '\u00C0'; case 193: return '\u00C1';
+            case 194: return '\u00C2'; case 195: return '\u00C3';
+            case 196: return '\u00C4'; case 197: return '\u00C5';
+            case 198: return '\u00C6'; case 199: return '\u00C7';
+            case 200: return '\u00C8'; case 201: return '\u00C9';
+            case 202: return '\u00CA'; case 203: return '\u00CB';
+            case 204: return '\u00CC'; case 205: return '\u00CD';
+            case 206: return '\u00CE'; case 207: return '\u00CF';
+            case 208: return '\u00D0'; case 209: return '\u00D1';
+            case 210: return '\u00D2'; case 211: return '\u00D3';
+            case 212: return '\u00D4'; case 213: return '\u00D5';
+            case 214: return '\u00D6'; case 215: return '\u00D7'; // ×
+            case 216: return '\u00D8'; case 217: return '\u00D9';
+            case 218: return '\u00DA'; case 219: return '\u00DB';
+            case 220: return '\u00DC'; case 221: return '\u00DD';
+            case 222: return '\u00DE'; case 223: return '\u00DF';
+            case 224: return '\u00E0'; case 225: return '\u00E1';
+            case 226: return '\u00E2'; case 227: return '\u00E3';
+            case 228: return '\u00E4'; case 229: return '\u00E5';
+            case 230: return '\u00E6'; case 231: return '\u00E7';
+            case 232: return '\u00E8'; case 233: return '\u00E9';
+            case 234: return '\u00EA'; case 235: return '\u00EB';
+            case 236: return '\u00EC'; case 237: return '\u00ED';
+            case 238: return '\u00EE'; case 239: return '\u00EF';
+            case 240: return '\u00F0'; case 241: return '\u00F1';
+            case 242: return '\u00F2'; case 243: return '\u00F3';
+            case 244: return '\u00F4'; case 245: return '\u00F5';
+            case 246: return '\u00F6'; case 247: return '\u00F7'; // ÷
+            case 248: return '\u00F8'; case 249: return '\u00F9';
+            case 250: return '\u00FA'; case 251: return '\u00FB';
+            case 252: return '\u00FC'; case 253: return '\u00FD';
+            case 254: return '\u00FE'; case 255: return '\u00FF';
+            default: return null; // 129/141/143/144/157 — Windows-1252-এ অনির্ধারিত (undefined)
+        }
+    }
+
+    // DOS/OEM কোডপেজ 437 — Alt+ddd (leading zero ছাড়া)। এখানে শুধু যাচাই-করা,
+    // প্র্যাকটিক্যালি গুরুত্বপূর্ণ সাবসেট রাখা হয়েছে: গণিত/বিজ্ঞান চিহ্ন (√, π, ≤, ≥,
+    // ≈, ≡, ∞, Σ, ±, ÷, °, ² ইত্যাদি — সোর্স যাচাই করা) এবং শুরুর কিছু প্রতীক/অ্যারো
+    // (source-confirmed)। বক্স-ড্রইং ক্যারেক্টার আর উচ্চারণ-চিহ্নযুক্ত ল্যাটিন অক্ষর
+    // (128-226 রেঞ্জের বেশিরভাগ) ইচ্ছাকৃতভাবে বাদ দেওয়া হলো — এই কিবোর্ডে ব্যবহারিক
+    // মূল্য কম, আর সেগুলোর নিখুঁত ম্যাপিং নিশ্চিতভাবে যাচাই করা যায়নি।
+    private Character cp437Char(int code) {
+        switch (code) {
+            case 1: return '\u263A';  // ☺
+            case 2: return '\u263B';  // ☻
+            case 3: return '\u2665';  // ♥
+            case 4: return '\u2666';  // ♦
+            case 5: return '\u2663';  // ♣
+            case 6: return '\u2660';  // ♠
+            case 7: return '\u2022';  // •
+            case 13: return '\u266A'; // ♪
+            case 14: return '\u266B'; // ♫
+            case 15: return '\u263C'; // ☼
+            case 16: return '\u25BA'; // ►
+            case 17: return '\u25C4'; // ◄
+            case 18: return '\u2195'; // ↕
+            case 20: return '\u00B6'; // ¶
+            case 21: return '\u00A7'; // §
+            case 23: return '\u21A8'; // ↨
+            case 24: return '\u2191'; // ↑
+            case 25: return '\u2193'; // ↓
+            case 26: return '\u2192'; // →
+            case 27: return '\u2190'; // ←
+            case 29: return '\u2194'; // ↔
+            case 30: return '\u25B2'; // ▲
+            case 31: return '\u25BC'; // ▼
+            case 227: return '\u03C0'; // π
+            case 228: return '\u03A3'; // Σ (উচ্চ কনফিডেন্স রেফারেন্স অনুযায়ী; কিছু চার্টে গ্রিক sigma-এর ছোট রূপও দেখা যায়)
+            case 230: return '\u00B5'; // µ
+            case 236: return '\u221E'; // ∞
+            case 239: return '\u2229'; // ∩
+            case 240: return '\u2261'; // ≡
+            case 241: return '\u00B1'; // ±
+            case 242: return '\u2265'; // ≥
+            case 243: return '\u2264'; // ≤
+            case 246: return '\u00F7'; // ÷
+            case 247: return '\u2248'; // ≈
+            case 248: return '\u00B0'; // °
+            case 249: return '\u2219'; // ∙
+            case 250: return '\u00B7'; // ·
+            case 251: return '\u221A'; // √
+            case 252: return '\u207F'; // ⁿ
+            case 253: return '\u00B2'; // ²
+            case 254: return '\u25A0'; // ■
+            default: return null;
+        }
     }
 
 
@@ -2351,13 +2603,18 @@ public class MyKeyboardService extends InputMethodService {
     // English → Classic → Unicode → English → ...
     private void toggleLanguageMode() {
         if (isEnglishMode) {
-            isEnglishMode = false;
-            isUnicodeMode = false; // → Classic
+            // English থেকে পরের চালু মোডে — আগে Classic (যদি চালু থাকে), নাহলে Unicode
+            // (যদি চালু থাকে), দুটোই বন্ধ থাকলে English-ই থেকে যাবে
+            if (classicEnabled) { isEnglishMode = false; isUnicodeMode = false; }
+            else if (unicodeEnabled) { isEnglishMode = false; isUnicodeMode = true; }
         } else if (!isUnicodeMode) {
-            isUnicodeMode = true;  // Classic → Unicode
+            // Classic থেকে — Unicode চালু থাকলে সেখানে, নাহলে সরাসরি English-এ (Unicode বাদ)
+            if (unicodeEnabled) { isUnicodeMode = true; }
+            else { isEnglishMode = true; }
         } else {
+            // Unicode থেকে English-এ — English কখনো বন্ধ হয় না, তাই এটা সবসময় নিরাপদ
             isEnglishMode = true;
-            isUnicodeMode = false; // Unicode → English
+            isUnicodeMode = false;
         }
         isSymbolMode = false;
         isEmojiMode = false;
@@ -2371,7 +2628,13 @@ public class MyKeyboardService extends InputMethodService {
     // অবস্থা থেকেই কল করা যায়: এখন যদি ইতিমধ্যে সেই target মোডে থাকা হয়, তাহলে
     // English-এ ফিরে যাবে; নাহলে সরাসরি সেই target মোডে চলে যাবে (মাঝখানে অন্য
     // মোড থাকলেও)। যেমন: Unicode মোডে থাকা অবস্থায় Ctrl+Alt+B চাপলে সরাসরি Classic-এ চলে যাবে।
+    // Settings থেকে target মোডটা বন্ধ করা থাকলে কিছুই বদলাবে না, শুধু একটা টোস্ট দেখাবে।
     private void applyModeShortcut(boolean targetIsUnicode) {
+        boolean targetEnabled = targetIsUnicode ? unicodeEnabled : classicEnabled;
+        if (!targetEnabled) {
+            Toast.makeText(this, (targetIsUnicode ? "Unicode" : "Classic") + " মোড বন্ধ আছে (Settings থেকে চালু করুন)", Toast.LENGTH_SHORT).show();
+            return;
+        }
         boolean alreadyInTarget = !isEnglishMode && (isUnicodeMode == targetIsUnicode);
         if (alreadyInTarget) {
             isEnglishMode = true;
