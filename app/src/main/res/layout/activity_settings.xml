@@ -257,6 +257,76 @@
                 android:thumbTint="#3B82F6"/>
         </LinearLayout>
 
+        <!-- ── কিবোর্ড মোড অন/অফ ── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⌨️  কিবোর্ড মোড"
+                android:textColor="#F1F5F9"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="বন্ধ রাখা মোড ভাষা-টগল সাইকেল আর Ctrl+Alt+V/B শর্টকাট — দুই জায়গা থেকেই বাদ পড়বে। English সবসময় চালু থাকে।"
+                android:textColor="#64748B"
+                android:textSize="11sp"
+                android:layout_marginBottom="12dp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Classic মোড"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"/>
+
+                <Switch
+                    android:id="@+id/switch_classic_mode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="#FBBF24"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Unicode মোড"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"/>
+
+                <Switch
+                    android:id="@+id/switch_unicode_mode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="#34D399"/>
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- ── এক্সটার্নাল কিবোর্ড টাইপিং স্ট্যাটস ── -->
         <LinearLayout
             android:layout_width="match_parent"
