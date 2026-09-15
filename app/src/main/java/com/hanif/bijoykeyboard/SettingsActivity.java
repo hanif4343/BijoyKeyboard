@@ -57,6 +57,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupThemeSection();
         setupHeightSection();
         setupSoundVibrationSection();
+        setupKeyboardModeSection();
         setupTypingStatsSection();
         setupDictionarySection();
     }
@@ -162,6 +163,29 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void updateVibrationLabel(int percent) {
         if (tvVibrationValue != null) tvVibrationValue.setText(percent + "%");
+    }
+
+    // ══════════════════════════════════════
+    // Classic / Unicode মোড আলাদা করে অন/অফ করা
+    // ══════════════════════════════════════
+    // "classic_enabled" / "unicode_enabled" — দুটোই ডিফল্ট true (অর্থাৎ ইনস্টলের পরপর
+    // দুটো মোডই চালু থাকবে)। MyKeyboardService.java-এর toggleLanguageMode()/applyModeShortcut()
+    // এই একই কী দুটো পড়ে বন্ধ থাকা মোড সাইকেল/শর্টকাট দুটো থেকেই বাদ দেয়। English
+    // এখানে টগল-যোগ্য না, সবসময় fallback হিসেবে থাকে।
+    private void setupKeyboardModeSection() {
+        Switch switchClassic = findViewById(R.id.switch_classic_mode);
+        if (switchClassic != null) {
+            switchClassic.setChecked(settingsPrefs.getBoolean("classic_enabled", true));
+            switchClassic.setOnCheckedChangeListener((CompoundButton btn, boolean checked) ->
+                    settingsPrefs.edit().putBoolean("classic_enabled", checked).apply());
+        }
+
+        Switch switchUnicode = findViewById(R.id.switch_unicode_mode);
+        if (switchUnicode != null) {
+            switchUnicode.setChecked(settingsPrefs.getBoolean("unicode_enabled", true));
+            switchUnicode.setOnCheckedChangeListener((CompoundButton btn, boolean checked) ->
+                    settingsPrefs.edit().putBoolean("unicode_enabled", checked).apply());
+        }
     }
 
     // ══════════════════════════════════════
